@@ -7,7 +7,7 @@ The implementation is in Python 3.10.12 and all the libraries used are listed in
 
 # Structure
 - `main.py` -> An archetype file, which is an example on how to call an instance of one of the 24 BBOB problems by using IOH interface and use the Vanilla-BO Algorithm stored in the repository.
-- _/Algorithms_
+- _/Algorithms_ -> A folder which stores the Algorithms to be developed.
 
 # Execution from source
 ## Dependencies to run from source
