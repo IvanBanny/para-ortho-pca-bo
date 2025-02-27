@@ -6,7 +6,8 @@ This repository contains an archetype to build algorithms by using BO-Torch. In 
 The implementation is in Python 3.10.12 and all the libraries used are listed in `requirements.txt`.
 
 # Structure
-- 
+- `main.py` -> An archetype file, which is an example on how to call an instance of one of the 24 BBOB problems by using IOH interface and use the Vanilla-BO Algorithm stored in the repository.
+- $Algorithms$
 
 # Execution from source
 ## Dependencies to run from source
