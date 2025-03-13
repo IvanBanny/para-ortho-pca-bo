@@ -1,0 +1,16 @@
+{
+	"version": "0.3.18", 
+	"suite": "unknown_suite", 
+	"function_id": 7, 
+	"function_name": "StepEllipsoid", 
+	"maximization": false, 
+	"algorithm": {"name": "Vanilla BO", "info": "Bo-Torch Implementation"},
+	"attributes": ["evaluations", "raw_y", "raw_y_best"],
+	"scenarios": [
+		{"dimension": 5,
+		"path": "data_f7_StepEllipsoid/IOHprofiler_f7_DIM5.dat",
+		"runs": [
+			{"instance": 1, "evals": 200, "best": {"evals": 166, "y": 3.768881571133627, "x": [-0.5853337846203127, 0.8080975080663126, -0.5844764509516023, 0.06041649857559557, -0.30732699874220615]}}
+		]}
+	]
+}
