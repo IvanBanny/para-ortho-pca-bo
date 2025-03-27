@@ -43,21 +43,23 @@ problem = get_problem(
 problem.attach_logger(logger)
 
 
+acquisition_function = "expected_improvement"
+
 # Set up the Vanilla BO
 optimizer = Vanilla_BO(
     budget=min(200, 50*problem.meta_data.n_variables),
     n_DoE=3*problem.meta_data.n_variables,
-    acquisition_function="expected_improvement",  # "probability_of_improvement", "upper_confidence_bound"
-    random_seed=44,
+    acquisition_function=acquisition_function,  # "probability_of_improvement", "upper_confidence_bound"
+    random_seed=45,
     maximisation=False,
     verbose=True,  # Print the best result-so-far
     DoE_parameters={'criterion': "center", 'iterations': 1000}
 )
 
-logger.watch(optimizer, "acquistion_function_name")
+logger.watch(optimizer, acquisition_function)
 
 # Run the optimization loop
-optimizer(problem=problem)
+optimizer(problem=problem, bounds=np.ones(problem.meta_data.n_variables))
 
 # Compare the distance from optimum and regret of the optimizer at the end
 print("The distance from optimum is: ", norm(problem.state.current_best.x-problem.optimum.x))
