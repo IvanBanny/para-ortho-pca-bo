@@ -1,4 +1,4 @@
-from ..AbstractBayesianOptimizer import AbstractBayesianOptimizer
+from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 from typing import Union, Callable, Optional
 from ioh.iohcpp.problem import RealSingleObjective, BBOB
 import numpy as np

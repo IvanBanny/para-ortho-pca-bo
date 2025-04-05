@@ -50,8 +50,7 @@ for i in range(10):
                 dimension=dimensions,  # The problem's dimension
             )
 
-problem.attach_logger(logger)
-
+            problem.attach_logger(logger)  # Fixed indentation here
 
             # Set up the Vanilla BO or PCA_BO
             budget = min(200, 50 * problem.meta_data.n_variables)
