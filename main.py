@@ -50,11 +50,11 @@ for i in range(10):
                 dimension=dimensions,  # The problem's dimension
             )
 
-            problem.attach_logger(logger)
+problem.attach_logger(logger)
 
 
             # Set up the Vanilla BO or PCA_BO
-            budget = min(150, 30 * problem.meta_data.n_variables)
+            budget = min(200, 50 * problem.meta_data.n_variables)
             n_DoE = 3 * problem.meta_data.n_variables
 
             if bo_variant == "vanilla":

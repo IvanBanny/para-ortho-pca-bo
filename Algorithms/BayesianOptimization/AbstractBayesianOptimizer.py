@@ -2,6 +2,7 @@ from ..AbstractAlgorithm import AbstractAlgorithm
 from typing import Union, Optional, List
 from pyDOE import lhs
 import numpy as np
+import torch
 from ioh.iohcpp.problem import RealSingleObjective
 from abc import abstractmethod
 
@@ -42,6 +43,10 @@ class LHS_sampler:
         """
         # Set the random seed
         np.random.seed(random_seed)
+        torch.manual_seed(random_seed)  # PyTorch CPU
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(random_seed)  # PyTorch GPU
+            torch.cuda.manual_seed_all(random_seed)  # Multi-GPU setups
 
         points = lhs(
             n=dim,
