@@ -1,8 +1,8 @@
-botorch==0.13.0
-gpytorch==1.14
-ioh==0.3.18
 numpy==1.26.4
-scipy==1.15.2
 torch==2.6.0
 pyDOE==0.3.8
 scikit-learn==1.6.1
+botorch==0.13.0
+gpytorch==1.14
+ioh==0.3.18
+iohinspector==0.0.3

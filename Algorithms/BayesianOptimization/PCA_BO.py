@@ -4,8 +4,8 @@ from sklearn.exceptions import ConvergenceWarning
 
 # Filter warnings from sklearn PCA
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
-from typing import Union, Callable, Optional, List
-from ioh.iohcpp.problem import RealSingleObjective, BBOB
+from typing import Union, Callable, Optional
+from ioh.iohcpp.problem import RealSingleObjective
 import numpy as np
 import torch
 import os
@@ -23,7 +23,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
 from sklearn.decomposition import PCA
 
-# Constants for acquisition function names - reusing from Vanilla_BO
+# Constants for acquisition function names
 ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
     "expected_improvement",
     "probability_of_improvement",
@@ -80,7 +80,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         super().__init__(budget, n_DoE, random_seed, **kwargs)
 
         # Check the defaults
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.double
         smoke_test = os.environ.get("SMOKE_TEST")
 
@@ -94,7 +94,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             "RAW_SAMPLES": 512 if not smoke_test else 32
         }
 
-        # Set-up the acquisition function
+        # Set up the acquisition function
         self.__acq_func = None
         self.acquistion_function_name = acquisition_function
 
@@ -171,7 +171,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Increment the number of function evaluations
                 self.number_of_function_evaluations += 1
 
-                # Print if we found a better solution
+                # Print if found a better solution
                 if ((self.maximisation and new_f_eval > self.current_best) or
                     (not self.maximisation and new_f_eval < self.current_best)) and self.verbose:
                     print(f"Found better solution: {new_f_eval}")
@@ -194,19 +194,18 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Re-fit the GPR
             self._initialize_model()
 
-        print("Optimization Process finalized!")
+        if self.verbose:
+            print("Optimization Process finalized!")
 
     def assign_new_best(self):
         """Assign the new best solution found so far."""
-        # Call the super class
         super().assign_new_best()
 
     def _calculate_weights(self) -> np.ndarray:
         """Calculate rank-based weights for PCA transformation.
 
-        This implements the rank-based weighting scheme described in the paper,
-        where better points (with lower function values for minimization) are
-        assigned higher weights.
+        This implements the rank-based weighting scheme described in the original PCA-BO paper,
+        where better points (with lower function values for minimization) are assigned higher weights.
 
         Returns:
             np.ndarray: Weights for each data point.
@@ -258,9 +257,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Use variance threshold to determine number of components
             self.pca = PCA(n_components=min(X.shape[1], X.shape[0] - 1))
 
-        # Since PCA.fit() doesn't accept sample_weight directly, we need to implement
-        # weighted PCA manually by scaling the data with the square root of weights
-        # This is mathematically equivalent to weighted PCA
         weighted_X = X * np.sqrt(weights[:, np.newaxis])
         self.pca.fit(weighted_X)
 

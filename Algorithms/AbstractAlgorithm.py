@@ -26,8 +26,8 @@ class AbstractAlgorithm(ABC):
     def __init__(self, **kwargs):
         """
         This is the constructor for any optimisation algorithm used within this framework.
-        In this framework, the initialiser might receive two keywords related to the 
-        maximisation/minimisation beahviour and the verbosity.
+        In this framework, the initializer might receive two keywords related to the
+        maximisation/minimisation behavior and the verbosity.
         """
         # Initialize the number of function evaluations
         self.__number_of_function_evaluations = 0
@@ -36,7 +36,7 @@ class AbstractAlgorithm(ABC):
         verbose_init = kwargs.pop("verbose", False)
         maximisation_init = kwargs.pop("maximisation", False)
 
-        # Initialise the bounds as Nonetype
+        # Initialise the bounds as None type
         self.__bounds = np.empty(shape=(1, 2))
             
         # Assign the variables as members of the class
@@ -80,7 +80,7 @@ class AbstractAlgorithm(ABC):
             # Set the dimension to be given by the parameters
             self.dimension = dim
             
-            # In case the a new maximisation default is given as a parameter
+            # In case a new maximisation default is given as a parameter
             self.maximisation = kwargs.pop("maximisation", False)
 
             analyzed_bounds = bounds
@@ -101,10 +101,6 @@ class AbstractAlgorithm(ABC):
     def __repr__(self):
         return super().__repr__()
     
-    def __name__(self) -> str:
-        """This is just to identify the name of the algorithm, which is included in the name"""
-        return self.__class__.__name__
-    
     @abstractmethod
     def reset(self):
         """Reset the algorithm state"""
@@ -118,7 +114,7 @@ class AbstractAlgorithm(ABC):
         
         self.__current_best_index = 0
 
-    @property 
+    @property
     def number_of_function_evaluations(self) -> int:
         """This property handles the number of function evaluations"""
         return self.__number_of_function_evaluations
@@ -253,7 +249,7 @@ class AbstractAlgorithm(ABC):
             try:
                 new_bounds = np.array(new_bounds)
             except Exception as e:
-                print("Error has occured", e.args, flush=True)
+                print("Error has occurred", e.args, flush=True)
 
             if new_bounds.size == 2:
                 # This is the case all the bounds are the same

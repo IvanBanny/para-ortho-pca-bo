@@ -1,6 +1,6 @@
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 from typing import Union, Callable, Optional
-from ioh.iohcpp.problem import RealSingleObjective, BBOB
+from ioh.iohcpp.problem import RealSingleObjective
 import numpy as np
 import torch
 import os
@@ -47,7 +47,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         super().__init__(budget, n_DoE, random_seed, **kwargs)
 
         # Check the defaults
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.double
         smoke_test = os.environ.get("SMOKE_TEST")
 
@@ -61,9 +61,9 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             "RAW_SAMPLES": 512 if not smoke_test else 32
         }
 
-        # Set-up the acquisition function
+        # Set up the acquisition function
         self.__acq_func = None
-        self.acquistion_function_name = acquisition_function
+        self.acquisition_function_name = acquisition_function
 
     def __str__(self):
         return "This is an instance of Vanilla BO Optimizer"
@@ -87,7 +87,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
         # Start the optimisation loop
         for cur_iteration in range(self.budget - self.n_DoE):
-            # Set up the acquistion function
+            # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
                 model=self.__model_obj,
                 best_f=self.current_best,
@@ -126,7 +126,8 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             # Re-fit the GPR
             self._initialise_model()
 
-        print("Optimisation Process finalised!")
+        if self.verbose:
+            print("Optimisation Process finalized!")
 
     def assign_new_best(self):
         """Assign the new best solution"""
@@ -178,7 +179,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
         # observe new values
         new_x = candidates.detach()
-        new_x = new_x.reshape(shape=((1, -1))).detach()
+        new_x = new_x.reshape(shape=(1, -1)).detach()
 
         return new_x
 
@@ -195,12 +196,12 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         return self.__torch_config
 
     @property
-    def acquistion_function_name(self) -> str:
+    def acquisition_function_name(self) -> str:
         """Get the acquisition function name"""
         return self.__acquisition_function_name
 
-    @acquistion_function_name.setter
-    def acquistion_function_name(self, new_name: str) -> None:
+    @acquisition_function_name.setter
+    def acquisition_function_name(self, new_name: str) -> None:
         """Set the acquisition function name"""
         # Remove some spaces
         new_name = new_name.strip()
