@@ -1,21 +1,18 @@
-"""
-This is a utility module that contains utility functions that are used in the algorithms module.
-"""
+"""This is a utility module that contains utility functions that are used in the Algorithms module."""
 
 import numpy as np
 from typing import List, Tuple, Optional, Union, Callable
 
 
 def generate_random_sample(lower_bound: float, upper_bound: float) -> float:
-    """
-    Generate a random sample of size n from a uniform distribution between lower_bound and upper_bound.
+    """Generate a random sample of size n from a uniform distribution between lower_bound and upper_bound.
 
     Args:
-        lower_bound: `float`: The lower bound of the distribution
-        upper_bound: `float`: The upper bound of the distribution
+        lower_bound: 'float': The lower bound of the distribution
+        upper_bound: 'float': The upper bound of the distribution
 
     Returns:
-        `np.ndarray`: A numpy array of size n with samples from the uniform distribution.
+        'np.ndarray': A numpy array of size n with samples from the uniform distribution.
     """
     return np.random.uniform(low=lower_bound, high=upper_bound, size=1)
 
@@ -26,17 +23,16 @@ def generate_random_array(
     n: int,
     shape: Optional[Tuple] = None
 ) -> np.ndarray:
-    """
-    Generate a random sample of size n from a uniform distribution between lower_bound and upper_bound.
+    """Generate a random sample of size n from a uniform distribution between lower_bound and upper_bound.
 
     Args:
-        lower_bound: `float`: The lower bound of the distribution
-        upper_bound: `float`: The upper bound of the distribution
-        n: `int`: The number of samples to generate.
-        shape: `Optional[Tuple]`: The shape of the array to be generated.
+        lower_bounds: 'float': The lower bound of the distribution
+        upper_bounds: 'float': The upper bound of the distribution
+        n: 'int': The number of samples to generate.
+        shape: 'Optional[Tuple]': The shape of the array to be generated.
 
     Returns:
-        `np.ndarray`: A numpy array of size n with samples from the uniform distribution.
+        'np.ndarray': A numpy array of size n with samples from the uniform distribution.
     """
     # Check if lower_bounds is a scalar
     if isinstance(lower_bounds, (float, int)):
@@ -58,23 +54,21 @@ def hill_valley_test(
     nt: Optional[int] = 10,
     tolerance: Optional[Union[np.float64, float]] = np.finfo(float).eps
 ) -> bool:
-    """
-    This is a function which performs the Hill Valley Test to
-    detect if two points correspond to the same Basin of attraction.
+    """A Hill Valley Test to detect if two points correspond to the same Basin of attraction.
 
     Args:
-        x_0: `Union[np.ndarray,List[float]]` : The initial point to trace the line
-        fit_x_0: `float`: The function evaluation at `x_0`
-        x_1: `Union[np.ndarray,List[float]]`: The endpoint to trace the line
-        fit_x_1: `float`: The function evaluation at `x_1`
-        func: `Callable`: A callable object, with an implemented `__call__(:np.ndarray)->float`,
+        x_0: 'Union[np.ndarray,List[float]]' : The initial point to trace the line
+        fit_x_0: 'float': The function evaluation at 'x_0'
+        x_1: 'Union[np.ndarray,List[float]]': The endpoint to trace the line
+        fit_x_1: 'float': The function evaluation at 'x_1'
+        func: 'Callable': A callable object, with an implemented '__call__(:np.ndarray)->float',
               denoting a function evaluation.
-        nt: `Optional[int]`: A number of between points to evaluate.
-        tolerance: `Optional[Union[np.float64,float]]`: A tolerance to use for the comparison
+        nt: 'Optional[int]': A number of between points to evaluate.
+        tolerance: 'Optional[Union[np.float64,float]]': A tolerance to use for the comparison
                    (just to determine the points are very similar).
 
     Returns:
-        `bool`: A boolean value, True if the points are in the same basin of attraction, False otherwise.
+        'bool': A boolean value, True if the points are in the same basin of attraction, False otherwise.
     """
     # Perform a check-up for the inputs
     if isinstance(x_0, list):
@@ -122,25 +116,26 @@ def hill_valley_test_2(
     nt: Optional[int] = 10,
     tolerance: Optional[Union[np.float64, float]] = np.finfo(float).eps
 ) -> Tuple[bool, int]:
-    """
+    """A Hill Valley Test to detect if two points correspond to the same Basin of attraction.
+
     This is the second variant of the function which performs the Hill Valley Test to
     detect if two points correspond to the same Basin of attraction. In this case,
     instead of just returning if the hill valley test is passed or not, it also returns
     the number of function evaluations.
 
     Args:
-        x_0: `Union[np.ndarray,List[float]]` : The initial point to trace the line
-        fit_x_0: `float`: The function evaluation at `x_0`
-        x_1: `Union[np.ndarray,List[float]]`: The endpoint to trace the line
-        fit_x_1: `float`: The function evaluation at `x_1`
-        func: `Callable`: A callable object, with an implemented `__call__(:np.ndarray)->float`,
+        x_0: 'Union[np.ndarray,List[float]]' : The initial point to trace the line
+        fit_x_0: 'float': The function evaluation at 'x_0'
+        x_1: 'Union[np.ndarray,List[float]]': The endpoint to trace the line
+        fit_x_1: 'float': The function evaluation at 'x_1'
+        func: 'Callable': A callable object, with an implemented '__call__(:np.ndarray)->float',
               denoting a function evaluation.
-        nt: `Optional[int]`: A number of between points to evaluate.
-        tolerance: `Optional[Union[np.float64,float]]`: A tolerance to use for the comparison
+        nt: 'Optional[int]': A number of between points to evaluate.
+        tolerance: 'Optional[Union[np.float64,float]]': A tolerance to use for the comparison
                    (just to determine the points are very similar).
 
     Returns:
-        `Tuple[bool,int]`: A tuple containing a boolean value and the number of function evaluations.
+        'Tuple[bool,int]': A tuple containing a boolean value and the number of function evaluations.
     """
     # Perform a check-up for the inputs
     if isinstance(x_0, list):

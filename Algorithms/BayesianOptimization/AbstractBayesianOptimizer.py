@@ -2,13 +2,11 @@ from ..AbstractAlgorithm import AbstractAlgorithm
 from typing import Union, Optional, List
 from pyDOE import lhs
 import numpy as np
-import torch
-from ioh.iohcpp.problem import RealSingleObjective
 from abc import abstractmethod
 
 
 class LHS_sampler:
-    """Latin Hypercube Sampling implementation"""
+    """Latin Hypercube Sampling implementation."""
 
     __default_criteria = ("center", "maximin", "centermaximin", "correlation")
     __reduced_criteria = {
@@ -30,8 +28,7 @@ class LHS_sampler:
         self.sample_zero = sample_zero
 
     def __call__(self, dim: int, n_samples: int, random_seed: int = 43) -> np.ndarray:
-        """
-        This `__call__` overload runs the LHS Experiment and returns a `NumPy array`
+        """        This '__call__' overload runs the LHS Experiment and returns a 'NumPy array'.
 
         Args:
             dim: Dimensionality of the samples
@@ -41,19 +38,15 @@ class LHS_sampler:
         Returns:
             NumPy array of samples
         """
-        # Set the random seed
+        random_state = np.random.get_state()
         np.random.seed(random_seed)
-        torch.manual_seed(random_seed)  # PyTorch CPU
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(random_seed)  # PyTorch GPU
-            torch.cuda.manual_seed_all(random_seed)  # Multi-GPU setups
-
         points = lhs(
             n=dim,
             samples=n_samples,
             criterion=self.criterion,
             iterations=self.iterations
         )
+        np.random.set_state(random_state)
 
         if self.sample_zero:
             points[0, :] = np.zeros_like(points[0, :])
@@ -63,14 +56,12 @@ class LHS_sampler:
 
     @property
     def criterion(self) -> str:
-        """Get the LHS criterion"""
+        """Get the LHS criterion."""
         return self.__criterion
 
     @criterion.setter
     def criterion(self, new_criterion: str) -> None:
-        """
-        This property holder checks if the criterion is well defined
-        """
+        """This property holder checks if the criterion is well-defined."""
         if not isinstance(new_criterion, str):
             raise ValueError("The new criterion is not a string!")
 
@@ -88,12 +79,12 @@ class LHS_sampler:
 
     @property
     def iterations(self) -> int:
-        """Get the number of iterations"""
+        """Get the number of iterations."""
         return self.__iterations
 
     @iterations.setter
     def iterations(self, new_n_iter: int) -> None:
-        """Set the number of iterations"""
+        """Set the number of iterations."""
         if new_n_iter > 0:
             self.__iterations = int(new_n_iter)
         else:
@@ -101,14 +92,12 @@ class LHS_sampler:
 
     @property
     def sample_zero(self) -> bool:
-        """
-        Property for sampling the zero vector
-        """
+        """Property for sampling the zero vector."""
         return self.__sample_zero
 
     @sample_zero.setter
     def sample_zero(self, new_change: bool) -> None:
-        """Set whether to include a zero sample"""
+        """Set whether to include a zero sample."""
         try:
             bool(new_change)
         except Exception as e:
@@ -119,7 +108,7 @@ class LHS_sampler:
 
 
 class AbstractBayesianOptimizer(AbstractAlgorithm):
-    """Abstract base class for Bayesian optimization algorithms"""
+    """Abstract base class for Bayesian optimization algorithms."""
 
     def __init__(
             self,
@@ -128,8 +117,8 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
             random_seed: int = 43,
             **kwargs
     ):
-        """Initialize the Bayesian optimizer"""
-        # call the initialiser from super class
+        """Initialize the Bayesian optimizer."""
+        # call the initializer from super class
         super().__init__(**kwargs)
         self.budget = budget
         self.n_DoE = n_DoE
@@ -157,7 +146,7 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         pass
 
     def __call__(self, problem, dim: int, bounds: np.ndarray, **kwargs) -> None:
-        """Execute the optimization algorithm"""
+        """Execute the optimization algorithm."""
         # Call the superclass
         super().__call__(problem, dim, bounds, **kwargs)
 
@@ -194,13 +183,11 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
             )
 
     def _rescale_lhs_points(self, raw_lhs_points: np.ndarray):
-        """
-        This function is defined in order to take the Latin Hypercube Samples
-        and project these points into the raw space defined by each dimension
+        """Project the Latin Hypercube Samples into the raw space defined by each dimension.
 
         Args:
-            raw_lhs_points (`np.ndarray`): A NumPy array with the initial samples coming
-                                          from DoE (some points between 0 to 1)
+            raw_lhs_points ('np.ndarray'): A NumPy array with the initial samples coming
+                                          from DoE (some points between 0 and 1)
         """
         # Take a copy of the raw points
         new_array = np.empty_like(raw_lhs_points)
@@ -215,8 +202,8 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
 
     @abstractmethod
     def assign_new_best(self):
-        """Assign the new best solution found so far"""
-        if self.maximisation:
+        """Assign the new best solution found so far."""
+        if self.maximization:
             self.current_best = max(self.__f_evals)
         else:
             self.current_best = min(self.__f_evals)
@@ -231,9 +218,7 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         return super(AbstractAlgorithm, self).__repr__()
 
     def __build_LHS_parameters(self, params_dict: Union[dict, None]) -> dict:
-        """
-        This function builds the LHS parameters to initialize the optimisation loop.
-        """
+        """This function builds the LHS parameters to initialize the optimisation loop."""
         complete_params_dict = {
             "criterion": "center",
             "iterations": 1000,
@@ -247,7 +232,7 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         return complete_params_dict
 
     def reset(self) -> None:
-        """Reset the optimizer state"""
+        """Reset the optimizer state."""
         # Call the superclass reset
         super().reset()
 
@@ -257,46 +242,46 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
 
     @property
     def budget(self) -> int:
-        """Get the optimization budget"""
+        """Get the optimization budget."""
         return self.__budget
 
     @budget.setter
     def budget(self, new_budget: int) -> None:
-        """Set the optimization budget"""
+        """Set the optimization budget."""
         self.__budget = int(new_budget) if new_budget > 0 else None
 
     @property
     def n_DoE(self) -> int:
-        """Get the number of initial design of experiments samples"""
+        """Get the number of initial design of experiments samples."""
         return self.__n_DoE
 
     @n_DoE.setter
     def n_DoE(self, new_n_DOE: int) -> None:
-        """Set the number of initial design of experiments samples"""
+        """Set the number of initial design of experiments samples."""
         self.__n_DoE = int(new_n_DOE) if new_n_DOE >= 0 else None
 
     @property
     def lhs_sampler(self) -> LHS_sampler:
-        """Get the LHS sampler object"""
+        """Get the LHS sampler object."""
         return self.__lhs_sampler
 
     @property
     def f_evals(self) -> List[float]:
-        """Get the function evaluation values"""
+        """Get the function evaluation values."""
         return self.__f_evals
 
     @property
     def x_evals(self) -> List[np.ndarray]:
-        """Get the evaluated points"""
+        """Get the evaluated points."""
         return self.__x_evals
 
     @property
     def random_seed(self) -> int:
-        """Get the random seed"""
+        """Get the random seed."""
         return self._random_seed
 
     @random_seed.setter
     def random_seed(self, new_seed: int) -> None:
-        """Set the random seed"""
+        """Set the random seed."""
         if isinstance(new_seed, int) and new_seed >= 0:
             self._random_seed = new_seed

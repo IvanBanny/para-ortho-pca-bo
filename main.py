@@ -1,91 +1,150 @@
+#!/usr/bin/env python3
+"""
+Entry point script for running Bayesian Optimization comparison experiments.
+This script configures and executes experiments comparing Vanilla BO and PCA-BO
+on benchmark functions from the BBOB suite.
+"""
+
 import os
-from pathlib import Path
-import numpy as np
-from numpy.linalg import norm
-
-from ioh import get_problem  # Function to set up problems from BBOB
-from ioh.iohcpp.logger import Analyzer
-from ioh.iohcpp.logger.property import RAWYBEST
-from ioh.iohcpp.logger.trigger import Each, ON_IMPROVEMENT, ALWAYS  # Triggers defining how often to log results
-
-# Choose your BO variant here: "vanilla" or "pca"
-bo_variant = "pca"
-
-# import the BO variants
-from Algorithms import Vanilla_BO
-from Algorithms import PCA_BO
+import argparse
+import time
+from Algorithms import ExperimentRunner
 
 
-# Logger setup
-
-# These are the triggers to set a form
-# how to log your data
-triggers = [
-    Each(10),  # Log after (10) evaluations
-    ON_IMPROVEMENT  # Log when there's an improvement
-]
-
-
-# this automatically creates a folder 'my-experiment' in the current working directory
-# if the folder already exists, it will given an additional number to make the name unique.
-
-
-for i in range(10):
-    logger = Analyzer(
-        triggers=triggers,
-        root=os.getcwd(),  # Store data in the current working directory
-        folder_name="my-experiment",  # in a folder named: 'my-experiment'
-        #algorithm_name="Vanilla BO" + str(i),  # meta-data for the algorithm used to generate these results
-        algorithm_name=f"{bo_variant.upper()} BO {i}",
-        algorithm_info="Bo-Torch Implementation",  # Some meta-data about the algorithm used (for reference)
-        additional_properties=[RAWYBEST],  # Use this to log the best-so-far
-        store_positions=True  # store x-variables in the logged files
+def parse_arguments():
+    """Parse command line arguments for experiment configuration."""
+    parser = argparse.ArgumentParser(
+        description="Run Bayesian Optimization comparison experiments"
     )
-    for seed in range(3):
-        for dimensions in [5, 10, 15]:
-            # In order to log data for a problem, we only have to attach it to a logger
-            problem = get_problem(
-                21,  # An integer denoting one of the 24 BBOB problem
-                instance=42-i,  # An instance, meaning the optimum of the problem is changed via some transformations
-                dimension=dimensions,  # The problem's dimension
-            )
 
-            problem.attach_logger(logger)  # Fixed indentation here
+    parser.add_argument(
+        "--dimensions",
+        type=int,
+        nargs="+",
+        default=[10, 20, 40],
+        help="Problem dimensions to test (default: 10 20 40)"
+    )
 
-            # Set up the Vanilla BO or PCA_BO
-            budget = min(200, 50 * problem.meta_data.n_variables)
-            n_DoE = 3 * problem.meta_data.n_variables
+    parser.add_argument(
+        "--functions",
+        type=int,
+        nargs="+",
+        default=[15, 16, 17],
+        help="BBOB function IDs to test (default: 15 16 17)"
+    )
 
-            if bo_variant == "vanilla":
-                optimizer = Vanilla_BO(
-                    budget=budget,
-                    n_DoE=n_DoE,
-                    acquisition_function="expected_improvement",
-                    random_seed=seed,
-                    maximisation=False,
-                    verbose=True,
-                    DoE_parameters={'criterion': "center", 'iterations': 1000}
-                )
-            elif bo_variant == "pca":
-                optimizer = PCA_BO(
-                    budget=budget,
-                    n_DoE=n_DoE,
-                    n_components=5,  # You can tune this as needed
-                    acquisition_function="expected_improvement",
-                    random_seed=seed,
-                    verbose=True
-                )
-            else:
-                raise ValueError(f"Unknown BO variant: {bo_variant}")
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=30,
+        help="Number of independent runs per function and dimension (default: 30)"
+    )
 
-            logger.watch(optimizer, "acquistion_function_name")
+    parser.add_argument(
+        "--budget_factor",
+        type=int,
+        default=10,
+        help="Budget factor for function evaluations: budget = budget_factor * dim + 50 (default: 10)"
+    )
 
-            # Run the optimization loop
-            optimizer(problem=problem)
+    parser.add_argument(
+        "--doe_factor",
+        type=float,
+        default=3.0,
+        help="Factor for initial design size: n_doe = doe_factor * dim (default: 3.0)"
+    )
 
-            # Compare the distance from optimum and regret of the optimizer at the end
-            print("The distance from optimum is: ", norm(problem.state.current_best.x-problem.optimum.x))
-            print("The regret is: ", problem.state.current_best.y - problem.optimum.y )
+    parser.add_argument(
+        "--experiment_dir",
+        type=str,
+        default="pca-bo-experiment",
+        help="Directory to store experiment results (default: pca-bo-experiment)"
+    )
 
-    # Close the logger
-    logger.close()
+    parser.add_argument(
+        "--acquisition",
+        type=str,
+        default="expected_improvement",
+        choices=["expected_improvement", "probability_of_improvement", "upper_confidence_bound"],
+        help="Acquisition function to use (default: expected_improvement)"
+    )
+
+    parser.add_argument(
+        "--var_threshold",
+        type=float,
+        default=0.95,
+        help="Variance threshold for PCA component selection (default: 0.95)"
+    )
+
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run a minimal experiment for quick testing"
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    """Configure and run the experiment based on command line arguments."""
+    args = parse_arguments()
+
+    # For quick testing, override with minimal settings if --quick flag is used
+    if args.quick:
+        args.dimensions = [5]  # Use only 5D
+        args.functions = [15, 20]  # Use only functions 15 and 20
+        args.runs = 30  # Just 30 runs
+        args.budget_factor = 5  # Small budget
+        args.doe_factor = 2.0  # Small DoE
+        print("Running in quick test mode with minimal settings")
+
+    # Create experiment directory if it doesn't exist
+    if not os.path.exists(args.experiment_dir):
+        os.makedirs(args.experiment_dir)
+
+    # Initialize experiment runner
+    experiment = ExperimentRunner(
+        dimensions=args.dimensions,
+        function_ids=args.functions,
+        num_runs=args.runs,
+        budget_factor=args.budget_factor,
+        doe_factor=args.doe_factor,
+        root_dir=os.getcwd(),
+        experiment_name=args.experiment_dir,
+        acquisition_function=args.acquisition,
+        pca_components=0,  # Automatic selection based on var_threshold
+        var_threshold=args.var_threshold,
+        verbose=args.verbose
+    )
+
+    # Print experiment configuration
+    print("Bayesian Optimization Experiment Configuration:")
+    print(f"  Dimensions: {args.dimensions}")
+    print(f"  Functions: {args.functions}")
+    print(f"  Runs: {args.runs}")
+    print(f"  Budget factor: {args.budget_factor}")
+    print(f"  DoE factor: {args.doe_factor}")
+    print(f"  Acquisition function: {args.acquisition}")
+    print(f"  PCA variance threshold: {args.var_threshold}")
+    print(f"  Output directory: {args.experiment_dir}")
+    print(f"  Verbose mode: {args.verbose}")
+    print("\nStarting experiment...\n")
+
+    # Run the experiment with timing
+    start_time = time.time()
+    experiment.run_experiment()
+    total_time = time.time() - start_time
+
+    print(f"\nExperiment completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
+    print(f"Results saved to {args.experiment_dir}")
+    print("Run 'python plot_results.py' to visualize the results")
+
+
+if __name__ == "__main__":
+    main()

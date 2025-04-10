@@ -1,14 +1,9 @@
-from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
-import warnings
-from sklearn.exceptions import ConvergenceWarning
+"""A standard PCA-BO implementation."""
 
-# Filter warnings from sklearn PCA
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-from typing import Union, Callable, Optional, List
-from ioh.iohcpp.problem import RealSingleObjective, BBOB
+from typing import Union, Callable, Optional
+import os
 import numpy as np
 import torch
-import os
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
@@ -22,8 +17,16 @@ from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
 from sklearn.decomposition import PCA
+from ioh.iohcpp.problem import RealSingleObjective
 
-# Constants for acquisition function names - reusing from Vanilla_BO
+from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
+
+import warnings
+from sklearn.exceptions import ConvergenceWarning
+
+warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Filter warnings from sklearn PCA
+
+# Constants for acquisition function names
 ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
     "expected_improvement",
     "probability_of_improvement",
@@ -80,7 +83,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         super().__init__(budget, n_DoE, random_seed, **kwargs)
 
         # Check the defaults
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.double
         smoke_test = os.environ.get("SMOKE_TEST")
 
@@ -94,9 +97,9 @@ class PCA_BO(AbstractBayesianOptimizer):
             "RAW_SAMPLES": 512 if not smoke_test else 32
         }
 
-        # Set-up the acquisition function
+        # Set up the acquisition function
         self.__acq_func = None
-        self.acquistion_function_name = acquisition_function
+        self.acquisition_function_name = acquisition_function
 
         # Set PCA parameters
         self.n_components = n_components
@@ -108,7 +111,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         self.__z_evals = []  # Transformed points in the reduced space
 
     def __str__(self):
-        return "This is an instance of PCA-assisted BO Optimizer"
+        return "This is an instance of a PCA-assisted BO Optimizer"
 
     def __call__(
             self,
@@ -128,28 +131,31 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Call the superclass to run the initial sampling of the problem
         super().__call__(problem, dim, bounds, **kwargs)
 
-        # Get a default beta (for UCB)
-        beta = kwargs.pop("beta", 0.2)
-
-        # Initialize z_evals list with transformed DoE points
-        self._transform_points_to_reduced_space()
-
-        # Run the model initialization
-        self._initialize_model(**kwargs)
-
         # Start the optimization loop
         for cur_iteration in range(self.budget - self.n_DoE):
+            if self.number_of_function_evaluations >= self.budget:
+                break
+
+            # Initialize z_evals list with transformed points
+            self._transform_points_to_reduced_space()
+
+            # Initialize and fit the GPR model
+            self._initialize_model(**kwargs)
+
             # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
                 model=self.__model_obj,
                 best_f=self.current_best,
-                maximize=self.maximisation
+                maximize=self.maximization
             )
 
             new_z = self.optimize_acqf_and_get_observation()
 
             # Transform the point back to the original space and evaluate
             for _, new_z_arr in enumerate(new_z):
+                if self.number_of_function_evaluations >= self.budget:
+                    break
+
                 new_z_numpy = new_z_arr.detach().numpy().ravel()
 
                 # Transform the point from reduced space to original space
@@ -171,9 +177,9 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Increment the number of function evaluations
                 self.number_of_function_evaluations += 1
 
-                # Print if we found a better solution
-                if ((self.maximisation and new_f_eval > self.current_best) or
-                    (not self.maximisation and new_f_eval < self.current_best)) and self.verbose:
+                # Print if found a better solution
+                if ((self.maximization and new_f_eval > self.current_best) or
+                    (not self.maximization and new_f_eval < self.current_best)) and self.verbose:
                     print(f"Found better solution: {new_f_eval}")
                     print(f"At point: {new_x_numpy}")
 
@@ -183,30 +189,24 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Print best to screen if verbose
             if self.verbose:
                 print(
-                    f"Current Iteration: {cur_iteration + 1}",
-                    f"Current Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
+                    # f"Iteration: {cur_iteration + 1}",
+                    f"Evaluations: {self.number_of_function_evaluations}/{self.budget}",
+                    f"Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
                     flush=True
                 )
 
-            # Update PCA with the new point and re-transform all points
-            self._transform_points_to_reduced_space()
-
-            # Re-fit the GPR
-            self._initialize_model()
-
-        print("Optimization Process finalized!")
+        if self.verbose:
+            print("Optimization Process finalized!")
 
     def assign_new_best(self):
         """Assign the new best solution found so far."""
-        # Call the super class
         super().assign_new_best()
 
     def _calculate_weights(self) -> np.ndarray:
         """Calculate rank-based weights for PCA transformation.
 
-        This implements the rank-based weighting scheme described in the paper,
-        where better points (with lower function values for minimization) are
-        assigned higher weights.
+        This implements the rank-based weighting scheme described in the original PCA-BO paper,
+        where better points (with lower function values for minimization) are assigned higher weights.
 
         Returns:
             np.ndarray: Weights for each data point.
@@ -214,7 +214,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         n = len(self.f_evals)
 
         # Get the ranking of points (1 = best, n = worst)
-        if self.maximisation:
+        if self.maximization:
             # For maximization, higher values are better
             ranks = np.argsort(np.argsort(-np.array(self.f_evals))) + 1
         else:
@@ -258,9 +258,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Use variance threshold to determine number of components
             self.pca = PCA(n_components=min(X.shape[1], X.shape[0] - 1))
 
-        # Since PCA.fit() doesn't accept sample_weight directly, we need to implement
-        # weighted PCA manually by scaling the data with the square root of weights
-        # This is mathematically equivalent to weighted PCA
         weighted_X = X * np.sqrt(weights[:, np.newaxis])
         self.pca.fit(weighted_X)
 
@@ -454,12 +451,12 @@ class PCA_BO(AbstractBayesianOptimizer):
         return self.__torch_config
 
     @property
-    def acquistion_function_name(self) -> str:
+    def acquisition_function_name(self) -> str:
         """Get the acquisition function name."""
         return self.__acquisition_function_name
 
-    @acquistion_function_name.setter
-    def acquistion_function_name(self, new_name: str) -> None:
+    @acquisition_function_name.setter
+    def acquisition_function_name(self, new_name: str) -> None:
         """Set the acquisition function name.
 
         Args:
@@ -526,7 +523,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             self.__acq_func = new_acquisition_function
         else:
             raise AttributeError(
-                "Cannot assign the acquisition function as this does not inherit from the class `AnalyticAcquisitionFunction`",
+                "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
                 name="acquisition_function",
                 obj=self.__acq_func
             )

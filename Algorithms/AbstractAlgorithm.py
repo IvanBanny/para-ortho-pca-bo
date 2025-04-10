@@ -1,8 +1,4 @@
-"""
-utf-8
-
-This is a handle to deal with the algorithm class to implement with Modular Problems 
-"""
+"""This is a handle to deal with the algorithm class to implement with Modular Problems."""
 
 __author__ = ["Iván Olarte Rodríguez"]
 
@@ -24,28 +20,28 @@ class AbstractAlgorithm(ABC):
 
     @abstractmethod
     def __init__(self, **kwargs):
-        """
-        This is the constructor for any optimisation algorithm used within this framework.
-        In this framework, the initialiser might receive two keywords related to the 
-        maximisation/minimisation beahviour and the verbosity.
+        """This is the constructor for any optimisation algorithm used within this framework.
+
+        In this framework, the initializer might receive two keywords related to the
+        maximization/minimisation behavior and the verbosity.
         """
         # Initialize the number of function evaluations
         self.__number_of_function_evaluations = 0
         
         # Set initial default variables
         verbose_init = kwargs.pop("verbose", False)
-        maximisation_init = kwargs.pop("maximisation", False)
+        maximization_init = kwargs.pop("maximization", False)
 
-        # Initialise the bounds as Nonetype
+        # Initialise the bounds as None type
         self.__bounds = np.empty(shape=(1, 2))
             
         # Assign the variables as members of the class
         self.verbose = verbose_init
-        self.__maximisation = maximisation_init
+        self.__maximization = maximization_init
         self.__current_best_index = 0
 
         # Initialize a storage variable for the best sample
-        if self.__maximisation:
+        if self.__maximization:
             self.__current_best = -inf 
         else:
             self.__current_best = inf
@@ -59,9 +55,7 @@ class AbstractAlgorithm(ABC):
                  dim: Optional[int], 
                  bounds: Optional[np.ndarray],
                  **kwargs):
-        """
-        This is a default function indicating the structure of the `_call_` method in the context of an algorithm
-        """
+        """This is a default function indicating the structure of the '_call_' method in the context of an algorithm."""
         if (isinstance(problem, BBOB) or isinstance(problem, RealSingleObjective) 
                 or issubclass(type(problem), RealSingleObjective)):
             
@@ -69,7 +63,7 @@ class AbstractAlgorithm(ABC):
             self.__problem = problem
             # Get the dimensionality from this
             self.dimension = problem.meta_data.n_variables
-            self.maximisation = (problem.meta_data.optimization_type == MAX)  # This is a placeholder to modify
+            self.maximization = (problem.meta_data.optimization_type == MAX)  # This is a placeholder to modify
 
             # Pass the bounds from the IOH definition (the setter function will adapt the input)
             self.bounds = problem.bounds
@@ -80,8 +74,8 @@ class AbstractAlgorithm(ABC):
             # Set the dimension to be given by the parameters
             self.dimension = dim
             
-            # In case the a new maximisation default is given as a parameter
-            self.maximisation = kwargs.pop("maximisation", False)
+            # In case a new maximization default is given as a parameter
+            self.maximization = kwargs.pop("maximization", False)
 
             analyzed_bounds = bounds
             if isinstance(analyzed_bounds, (np.ndarray, List[float], Tuple[float])):
@@ -101,26 +95,22 @@ class AbstractAlgorithm(ABC):
     def __repr__(self):
         return super().__repr__()
     
-    def __name__(self) -> str:
-        """This is just to identify the name of the algorithm, which is included in the name"""
-        return self.__class__.__name__
-    
     @abstractmethod
     def reset(self):
-        """Reset the algorithm state"""
+        """Reset the algorithm state."""
         # Set the number of function evaluations to 0
         self.number_of_function_evaluations = 0
 
-        if self.maximisation:
+        if self.maximization:
             self.current_best = -inf
         else:
             self.current_best = inf
         
         self.__current_best_index = 0
 
-    @property 
+    @property
     def number_of_function_evaluations(self) -> int:
-        """This property handles the number of function evaluations"""
+        """This property handles the number of function evaluations."""
         return self.__number_of_function_evaluations
     
     @number_of_function_evaluations.setter 
@@ -133,27 +123,27 @@ class AbstractAlgorithm(ABC):
     
     @property
     def verbose(self) -> bool:
-        """Definition of verbosity of the algorithm"""
+        """Definition of verbosity of the algorithm."""
         return self.__verbose
     
     @verbose.setter
     def verbose(self, new_verbosity: bool) -> None:
-        """Rewrite the verbosity parameter"""
+        """Rewrite the verbosity parameter."""
         self.__verbose = bool(new_verbosity)
 
     @property 
     def dimension(self) -> Union[int, None]:
-        """Get the dimension of the problem"""
+        """Get the dimension of the problem."""
         return self.__dimension
 
     @dimension.deleter
     def dimension(self) -> None:
-        """Delete the dimension attribute"""
+        """Delete the dimension attribute."""
         del self.__dimension
 
     @dimension.setter
     def dimension(self, new_dimension: Union[int, None]) -> None:
-        """Set the dimension of the problem"""
+        """Set the dimension of the problem."""
         if isinstance(new_dimension, int) and new_dimension > 0:
             self.__dimension = new_dimension
         elif new_dimension is None:
@@ -163,13 +153,13 @@ class AbstractAlgorithm(ABC):
     
     @property
     def current_best(self) -> float:
-        """Get the current best solution value"""
+        """Get the current best solution value."""
         return self.__current_best
     
     @current_best.setter
     def current_best(self, new_current_best: float):
-        """Set the current best solution value"""
-        if self.__maximisation:
+        """Set the current best solution value."""
+        if self.__maximization:
             if new_current_best >= self.__current_best:
                 # Assign this new value
                 self.__current_best = new_current_best
@@ -184,12 +174,12 @@ class AbstractAlgorithm(ABC):
     
     @property 
     def current_best_index(self) -> int:
-        """Get the index of the current best solution"""
+        """Get the index of the current best solution."""
         return self.__current_best_index
     
     @current_best_index.setter
     def current_best_index(self, new_current_best_index: int) -> None:
-        """Set the index of the current best solution"""
+        """Set the index of the current best solution."""
         if isinstance(new_current_best_index, int) and new_current_best_index >= self.__current_best_index:
             # Assign in this case
             self.__current_best_index = new_current_best_index
@@ -197,34 +187,30 @@ class AbstractAlgorithm(ABC):
             raise ValueError("Something is wrong with this assignment")
     
     @property 
-    def maximisation(self) -> bool:
-        """Get whether the problem is a maximisation problem"""
-        return self.__maximisation
+    def maximization(self) -> bool:
+        """Get whether the problem is a maximization problem."""
+        return self.__maximization
     
-    @maximisation.setter
-    def maximisation(self, new_definition: bool) -> None:
-        """Set whether the problem is a maximisation problem"""
+    @maximization.setter
+    def maximization(self, new_definition: bool) -> None:
+        """Set whether the problem is a maximization problem."""
         # Assign the change in variable
-        if self.__maximisation != bool(new_definition):
-            self.__maximisation = bool(new_definition)
+        if self.__maximization != bool(new_definition):
+            self.__maximization = bool(new_definition)
             # Change given this condition
-            if self.__maximisation:
+            if self.__maximization:
                 self.__current_best = -inf
             else:
                 self.__current_best = inf
 
     @property
     def bounds(self) -> np.ndarray:
-        """
-        Bounds property `getter`. This just a repeater from the token in memory
-        """
+        """Bounds property 'getter'. This just a repeater from the token in memory."""
         return self.__bounds
     
     @bounds.setter
     def bounds(self, new_bounds: Union[np.ndarray, RealBounds, List[float], Tuple[float]]):
-        """
-        This is the bounds property setter
-        """
+        """This is the bounds property setter."""
         # The first case is if the bounds come from an IOH defined problem
         if isinstance(new_bounds, RealBounds):
             lower_bounds = new_bounds.lb
@@ -253,7 +239,7 @@ class AbstractAlgorithm(ABC):
             try:
                 new_bounds = np.array(new_bounds)
             except Exception as e:
-                print("Error has occured", e.args, flush=True)
+                print("Error has occurred", e.args, flush=True)
 
             if new_bounds.size == 2:
                 # This is the case all the bounds are the same
@@ -280,8 +266,6 @@ class AbstractAlgorithm(ABC):
                 raise AttributeError("The bounds should be a given in pairs", name="bounds")
     
     def compute_space_volume(self) -> float:
-        """
-        This function computes the volume of the space defined by the bounds
-        """
+        """This function computes the volume of the space defined by the bounds."""
         # Compute the volume of the space
         return np.prod(self.bounds[:, 1] - self.bounds[:, 0])
