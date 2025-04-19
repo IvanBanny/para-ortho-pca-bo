@@ -1,9 +1,10 @@
-from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
+"""A standard BO implementation."""
+
 from typing import Union, Callable, Optional
-from ioh.iohcpp.problem import RealSingleObjective, BBOB
+import os
+from time import perf_counter
 import numpy as np
 import torch
-import os
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
@@ -16,6 +17,10 @@ from botorch.acquisition.analytic import (
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
+from ioh.iohcpp.problem import RealSingleObjective
+
+from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
+from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 
 # Constants for acquisition function names
 ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
@@ -32,7 +37,9 @@ ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS = {
 
 
 class Vanilla_BO(AbstractBayesianOptimizer):
-    """Vanilla Bayesian Optimization implementation"""
+    """Vanilla Bayesian Optimization implementation."""
+
+    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf"]
 
     def __init__(
             self,
@@ -42,12 +49,14 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             random_seed: int = 43,
             **kwargs
     ):
-        """Initialize the Vanilla BO optimizer with the given parameters"""
+        """Initialize the Vanilla BO optimizer with the given parameters."""
         # Call the superclass
-        super().__init__(budget, n_DoE, random_seed, **kwargs)
+        super().__init__(budget, n_DoE, **kwargs)
+
+        self.random_seed = random_seed
 
         # Check the defaults
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.double
         smoke_test = os.environ.get("SMOKE_TEST")
 
@@ -61,12 +70,13 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             "RAW_SAMPLES": 512 if not smoke_test else 32
         }
 
-        # Set-up the acquisition function
+        # Set up the acquisition function
+        self.__acq_func_class = None
         self.__acq_func = None
-        self.acquistion_function_name = acquisition_function
+        self.acquisition_function_name = acquisition_function
 
     def __str__(self):
-        return "This is an instance of Vanilla BO Optimizer"
+        return "This is an instance of a Vanilla BO Optimizer"
 
     def __call__(
             self,
@@ -75,29 +85,41 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             bounds: Optional[np.ndarray] = None,
             **kwargs
     ) -> None:
-        """Execute the optimization algorithm"""
+        """Execute the optimization algorithm."""
+        if self._pbar is not None:
+            original_stdout = redirect_stdout_to_tqdm(self._pbar)
+
+        # Save current randomness states and impose seed
+        self.impose_random_seed()
+
         # Call the superclass to run the initial sampling of the problem
         super().__call__(problem, dim, bounds, **kwargs)
 
-        # Get a default beta (for UCB)
-        beta = kwargs.pop("beta", 0.2)
-
-        # Run the model initialisation
-        self._initialise_model(**kwargs)
+        if self._pbar is not None:
+            self._pbar.update(self.n_DoE)
 
         # Start the optimisation loop
         for cur_iteration in range(self.budget - self.n_DoE):
-            # Set up the acquistion function
+            if self.number_of_function_evaluations >= self.budget:
+                break
+
+            # Initialize and fit the GPR model
+            self._initialise_model(**kwargs)
+
+            # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
                 model=self.__model_obj,
                 best_f=self.current_best,
-                maximize=self.maximisation
+                maximize=self.maximization
             )
 
             new_x = self.optimize_acqf_and_get_observation()
 
             # Append the new values
             for _, new_x_arr in enumerate(new_x):
+                if self.number_of_function_evaluations >= self.budget:
+                    break
+
                 new_x_arr_numpy = new_x_arr.detach().numpy().ravel()
 
                 # Append the new value
@@ -105,6 +127,9 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
                 # Evaluate the function
                 new_f_eval = problem(new_x_arr_numpy)
+
+                if self._pbar is not None:
+                    self._pbar.update(1)
 
                 # Append the function evaluation
                 self.f_evals.append(new_f_eval)
@@ -118,24 +143,28 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             # Print best to screen if verbose
             if self.verbose:
                 print(
-                    f"Current Iteration: {cur_iteration + 1}",
-                    f"Current Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
+                    # f"Iteration: {cur_iteration + 1}",
+                    f"Evaluations: {self.number_of_function_evaluations}/{self.budget}",
+                    f"Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
                     flush=True
                 )
 
-            # Re-fit the GPR
-            self._initialise_model()
+        if self.verbose:
+            print("Optimisation Process finalized!")
 
-        print("Optimisation Process finalised!")
+        # Restore initial randomness states
+        self.restore_random_states()
+
+        if self._pbar is not None:
+            restore_stdout(original_stdout)
 
     def assign_new_best(self):
-        """Assign the new best solution"""
+        """Assign the new best solution."""
         # Call the super class
         super().assign_new_best()
 
     def _initialise_model(self, **kwargs):
-        """
-        This function initializes/fits the Gaussian Process Regression
+        """This function initializes/fits the Gaussian Process Regression.
 
         Args:
             **kwargs: Left these keyword arguments for upcoming developments
@@ -150,6 +179,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         train_obj = np.array(self.f_evals).reshape((-1, 1))
         train_obj = torch.from_numpy(train_obj).detach()
 
+        start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             train_x,
             train_obj,
@@ -163,10 +193,12 @@ class Vanilla_BO(AbstractBayesianOptimizer):
                 bounds=bounds_torch
             )
         )
+        self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:
         """Optimizes the acquisition function, and returns a new candidate."""
-        # optimize
+        # Optimize
+        start_time = perf_counter()
         candidates, _ = optimize_acqf(
             acq_function=self.acquisition_function,
             bounds=torch.from_numpy(self.bounds.transpose()).detach(),
@@ -175,10 +207,11 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             raw_samples=self.__torch_config['RAW_SAMPLES'],  # used for initialization heuristic
             options={"batch_limit": 5, "maxiter": 200},
         )
+        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
-        # observe new values
+        # Observe new values
         new_x = candidates.detach()
-        new_x = new_x.reshape(shape=((1, -1))).detach()
+        new_x = new_x.reshape(shape=(1, -1)).detach()
 
         return new_x
 
@@ -186,44 +219,46 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         return super().__repr__()
 
     def reset(self):
-        """Reset the optimizer state"""
-        return super().reset()
+        """Reset the optimizer state."""
+        super().reset()
 
     @property
     def torch_config(self) -> dict:
-        """Get the torch configuration"""
+        """Get the torch configuration."""
         return self.__torch_config
 
     @property
-    def acquistion_function_name(self) -> str:
-        """Get the acquisition function name"""
+    def acquisition_function_name(self) -> str:
+        """Get the acquisition function name."""
         return self.__acquisition_function_name
 
-    @acquistion_function_name.setter
-    def acquistion_function_name(self, new_name: str) -> None:
-        """Set the acquisition function name"""
+    @acquisition_function_name.setter
+    def acquisition_function_name(self, new_name: str) -> None:
+        """Set the acquisition function name.
+
+        Args:
+            new_name (str): Name of the acquisition function.
+
+        Raises:
+            ValueError: If the acquisition function name is not recognized.
+        """
         # Remove some spaces
         new_name = new_name.strip()
 
-        # Start with a dummy variable
-        dummy_var = ""
-
         # Check in the reduced
         if new_name in ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS:
-            # Assign the name
-            dummy_var = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
+            self.__acquisition_function_name = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
         else:
             if new_name.lower() in ALLOWED_ACQUISITION_FUNCTION_STRINGS:
-                dummy_var = new_name
+                self.__acquisition_function_name = new_name
             else:
-                raise ValueError("Oddly defined name")
+                raise ValueError(f"Oddly defined name {new_name}")
 
-        self.__acquisition_function_name = dummy_var
         # Run to set up the acquisition function subclass
         self.set_acquisition_function_subclass()
 
     def set_acquisition_function_subclass(self) -> None:
-        """Set the acquisition function subclass based on the name"""
+        """Set the acquisition function subclass based on the name."""
         if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
             self.__acq_func_class = LogExpectedImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
@@ -233,28 +268,34 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
     @property
     def acquisition_function_class(self) -> Callable:
-        """Get the acquisition function class"""
+        """Get the acquisition function class."""
         return self.__acq_func_class
 
     @property
     def acquisition_function(self) -> AnalyticAcquisitionFunction:
-        """
-        This returns the stored defined acquisition function defined at some point
-        of the loop
+        """Get the stored acquisition function defined at some point of the loop.
+
+        Returns:
+            AnalyticAcquisitionFunction: The acquisition function.
         """
         return self.__acq_func
 
     @acquisition_function.setter
     def acquisition_function(self, new_acquisition_function: AnalyticAcquisitionFunction) -> None:
-        """
-        This is the setter function to the new acquisition function
+        """Set the acquisition function.
+
+        Args:
+            new_acquisition_function (AnalyticAcquisitionFunction): The acquisition function.
+
+        Raises:
+            AttributeError: If the new acquisition function is not a subclass of AnalyticAcquisitionFunction.
         """
         if issubclass(type(new_acquisition_function), AnalyticAcquisitionFunction):
             # Assign in this case
             self.__acq_func = new_acquisition_function
         else:
             raise AttributeError(
-                "Cannot assign the acquisition function as this does not inherit from the class `AnalyticAcquisitionFunction`",
+                "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
                 name="acquisition_function",
                 obj=self.__acq_func
             )
