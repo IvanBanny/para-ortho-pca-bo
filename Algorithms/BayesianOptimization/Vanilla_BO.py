@@ -2,6 +2,7 @@
 
 from typing import Union, Callable, Optional
 import os
+from time import perf_counter
 import numpy as np
 import torch
 from torch import Tensor
@@ -18,6 +19,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
 from ioh.iohcpp.problem import RealSingleObjective
 
+from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 
 # Constants for acquisition function names
@@ -37,6 +39,8 @@ ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS = {
 class Vanilla_BO(AbstractBayesianOptimizer):
     """Vanilla Bayesian Optimization implementation."""
 
+    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf"]
+
     def __init__(
             self,
             budget: int,
@@ -47,7 +51,9 @@ class Vanilla_BO(AbstractBayesianOptimizer):
     ):
         """Initialize the Vanilla BO optimizer with the given parameters."""
         # Call the superclass
-        super().__init__(budget, n_DoE, random_seed, **kwargs)
+        super().__init__(budget, n_DoE, **kwargs)
+
+        self.random_seed = random_seed
 
         # Check the defaults
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,10 +71,9 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         }
 
         # Set up the acquisition function
+        self.__acq_func_class = None
         self.__acq_func = None
         self.acquisition_function_name = acquisition_function
-
-        self.foo = 1
 
     def __str__(self):
         return "This is an instance of a Vanilla BO Optimizer"
@@ -81,8 +86,17 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             **kwargs
     ) -> None:
         """Execute the optimization algorithm."""
+        if self._pbar is not None:
+            original_stdout = redirect_stdout_to_tqdm(self._pbar)
+
+        # Save current randomness states and impose seed
+        self.impose_random_seed()
+
         # Call the superclass to run the initial sampling of the problem
         super().__call__(problem, dim, bounds, **kwargs)
+
+        if self._pbar is not None:
+            self._pbar.update(self.n_DoE)
 
         # Start the optimisation loop
         for cur_iteration in range(self.budget - self.n_DoE):
@@ -99,8 +113,6 @@ class Vanilla_BO(AbstractBayesianOptimizer):
                 maximize=self.maximization
             )
 
-            self.foo = 1
-
             new_x = self.optimize_acqf_and_get_observation()
 
             # Append the new values
@@ -114,9 +126,10 @@ class Vanilla_BO(AbstractBayesianOptimizer):
                 self.x_evals.append(new_x_arr_numpy)
 
                 # Evaluate the function
-                self.foo = 2
                 new_f_eval = problem(new_x_arr_numpy)
-                self.foo = 3
+
+                if self._pbar is not None:
+                    self._pbar.update(1)
 
                 # Append the function evaluation
                 self.f_evals.append(new_f_eval)
@@ -139,6 +152,12 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         if self.verbose:
             print("Optimisation Process finalized!")
 
+        # Restore initial randomness states
+        self.restore_random_states()
+
+        if self._pbar is not None:
+            restore_stdout(original_stdout)
+
     def assign_new_best(self):
         """Assign the new best solution."""
         # Call the super class
@@ -160,6 +179,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         train_obj = np.array(self.f_evals).reshape((-1, 1))
         train_obj = torch.from_numpy(train_obj).detach()
 
+        start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             train_x,
             train_obj,
@@ -173,10 +193,12 @@ class Vanilla_BO(AbstractBayesianOptimizer):
                 bounds=bounds_torch
             )
         )
+        self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:
         """Optimizes the acquisition function, and returns a new candidate."""
         # Optimize
+        start_time = perf_counter()
         candidates, _ = optimize_acqf(
             acq_function=self.acquisition_function,
             bounds=torch.from_numpy(self.bounds.transpose()).detach(),
@@ -185,6 +207,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             raw_samples=self.__torch_config['RAW_SAMPLES'],  # used for initialization heuristic
             options={"batch_limit": 5, "maxiter": 200},
         )
+        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
         # Observe new values
         new_x = candidates.detach()

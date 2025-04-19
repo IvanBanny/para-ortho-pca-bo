@@ -2,6 +2,7 @@
 
 from typing import Union, Callable, Optional
 import os
+from time import perf_counter
 import numpy as np
 import torch
 from torch import Tensor
@@ -19,6 +20,7 @@ from gpytorch.kernels import MaternKernel
 from sklearn.decomposition import PCA
 from ioh.iohcpp.problem import RealSingleObjective
 
+from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 
 import warnings
@@ -57,6 +59,8 @@ class PCA_BO(AbstractBayesianOptimizer):
         __acq_func (AnalyticAcquisitionFunction): The acquisition function.
     """
 
+    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf", "pca"]
+
     def __init__(
             self,
             budget: int,
@@ -80,7 +84,9 @@ class PCA_BO(AbstractBayesianOptimizer):
             **kwargs: Additional keyword arguments for the parent class.
         """
         # Call the superclass
-        super().__init__(budget, n_DoE, random_seed, **kwargs)
+        super().__init__(budget, n_DoE, **kwargs)
+
+        self.random_seed = random_seed
 
         # Check the defaults
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -98,6 +104,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         }
 
         # Set up the acquisition function
+        self.__acq_func_class = None
         self.__acq_func = None
         self.acquisition_function_name = acquisition_function
 
@@ -128,8 +135,17 @@ class PCA_BO(AbstractBayesianOptimizer):
             bounds (Optional[np.ndarray], optional): Bounds for the decision variables. Defaults to None.
             **kwargs: Additional keyword arguments.
         """
+        if self._pbar is not None:
+            original_stdout = redirect_stdout_to_tqdm(self._pbar)
+
+        # Save current randomness states and impose seed
+        self.impose_random_seed()
+
         # Call the superclass to run the initial sampling of the problem
         super().__call__(problem, dim, bounds, **kwargs)
+
+        if self._pbar is not None:
+            self._pbar.update(self.n_DoE)
 
         # Start the optimization loop
         for cur_iteration in range(self.budget - self.n_DoE):
@@ -171,6 +187,9 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Evaluate the function
                 new_f_eval = problem(new_x_numpy)
 
+                if self._pbar is not None:
+                    self._pbar.update(1)
+
                 # Append the function evaluation
                 self.f_evals.append(new_f_eval)
 
@@ -197,6 +216,12 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         if self.verbose:
             print("Optimization Process finalized!")
+
+        # Restore initial randomness states
+        self.restore_random_states()
+
+        if self._pbar is not None:
+            restore_stdout(original_stdout)
 
     def assign_new_best(self):
         """Assign the new best solution found so far."""
@@ -259,7 +284,10 @@ class PCA_BO(AbstractBayesianOptimizer):
             self.pca = PCA(n_components=min(X.shape[1], X.shape[0] - 1))
 
         weighted_X = X * np.sqrt(weights[:, np.newaxis])
+
+        start_time = perf_counter()
         self.pca.fit(weighted_X)
+        self.timing_logs["pca"].append(perf_counter() - start_time)
 
         # If using variance threshold, select components that explain enough variance
         if self.n_components <= 0:
@@ -284,7 +312,9 @@ class PCA_BO(AbstractBayesianOptimizer):
             noise = np.random.normal(0, 1e-8, size=weighted_X.shape)
             weighted_X += noise
 
+            start_time = perf_counter()
             self.pca.fit(weighted_X)
+            self.timing_logs["pca"].append(perf_counter() - start_time)
 
         self.explained_variance_ratio = self.pca.explained_variance_ratio_
 
@@ -355,6 +385,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         train_obj = np.array(self.f_evals).reshape((-1, 1))
         train_obj = torch.from_numpy(train_obj).double()
 
+        start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             train_z,
             train_obj,
@@ -365,6 +396,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                 bounds=bounds_torch
             )
         )
+        self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:
         """Optimize the acquisition function in the reduced space.
@@ -401,6 +433,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         for attempt in range(3):
             try:
                 # Optimize
+                start_time = perf_counter()
                 candidates, acq_value = optimize_acqf(
                     acq_function=self.acquisition_function,
                     bounds=bounds_torch,
@@ -409,6 +442,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                     raw_samples=self.__torch_config['RAW_SAMPLES'] * (attempt + 1),
                     options={"batch_limit": 5, "maxiter": 200 * (attempt + 1)},
                 )
+                self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
                 # Check if acquisition value is significantly different from zero
                 if acq_value.item() > 1e-6:
@@ -431,7 +465,7 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Observe new values
         new_z = candidates.detach()
-        new_z = new_z.reshape(shape=((1, -1))).detach()
+        new_z = new_z.reshape(shape=(1, -1)).detach()
 
         return new_z
 
@@ -468,20 +502,16 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Remove some spaces
         new_name = new_name.strip()
 
-        # Start with a dummy variable
-        dummy_var = ""
-
         # Check in the reduced
         if new_name in ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS:
             # Assign the name
-            dummy_var = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
+            self.__acquisition_function_name = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
         else:
             if new_name.lower() in ALLOWED_ACQUISITION_FUNCTION_STRINGS:
-                dummy_var = new_name
+                self.__acquisition_function_name = new_name
             else:
                 raise ValueError("Oddly defined name")
 
-        self.__acquisition_function_name = dummy_var
         # Run to set up the acquisition function subclass
         self.set_acquisition_function_subclass()
 

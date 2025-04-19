@@ -14,7 +14,7 @@ from Algorithms import ExperimentRunner
 def parse_arguments():
     """Parse command line arguments for experiment configuration."""
     parser = argparse.ArgumentParser(
-        description="Run Bayesian Optimization comparison experiments"
+        description="Run Bayesian Optimization comparison experiments."
     )
 
     parser.add_argument(
@@ -26,38 +26,38 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--functions",
+        "--problems",
         type=int,
         nargs="+",
         default=[15, 16, 17],
-        help="BBOB function IDs to test (default: 15 16 17)"
+        help="BBOB problem IDs to test (default: 15 16 17)"
     )
 
     parser.add_argument(
         "--runs",
         type=int,
         default=30,
-        help="Number of independent runs per function and dimension (default: 30)"
+        help="Number of independent runs per problem and dimension (default: 30)"
     )
 
     parser.add_argument(
         "--budget_factor",
         type=int,
         default=10,
-        help="Budget factor for function evaluations: budget = budget_factor * dim + 50 (default: 10)"
+        help="Budget factor for problem evaluations: budget = budget_factor * dim + 50 (default: 10)"
     )
 
     parser.add_argument(
         "--doe_factor",
-        type=float,
-        default=3.0,
+        type=int,
+        default=3,
         help="Factor for initial design size: n_doe = doe_factor * dim (default: 3.0)"
     )
 
     parser.add_argument(
         "--experiment_dir",
         type=str,
-        default="pca-bo-experiment",
+        default="experiment",
         help="Directory to store experiment results (default: pca-bo-experiment)"
     )
 
@@ -98,20 +98,17 @@ def main():
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
         args.dimensions = [5]  # Use only 5D
-        args.functions = [15, 20]  # Use only functions 15 and 20
+        args.problems = [15, 20]  # Use only problems 15 and 20
         args.runs = 30  # Just 30 runs
         args.budget_factor = 5  # Small budget
         args.doe_factor = 2.0  # Small DoE
-        print("Running in quick test mode with minimal settings")
-
-    # Create experiment directory if it doesn't exist
-    if not os.path.exists(args.experiment_dir):
-        os.makedirs(args.experiment_dir)
+        print("\nRunning in quick test mode with minimal settings")
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
+        algorithms=["pca", "vanilla"],
         dimensions=args.dimensions,
-        function_ids=args.functions,
+        problem_ids=args.problems,
         num_runs=args.runs,
         budget_factor=args.budget_factor,
         doe_factor=args.doe_factor,
@@ -124,9 +121,9 @@ def main():
     )
 
     # Print experiment configuration
-    print("Bayesian Optimization Experiment Configuration:")
+    print("\nBayesian Optimization Experiment Configuration:")
     print(f"  Dimensions: {args.dimensions}")
-    print(f"  Functions: {args.functions}")
+    print(f"  Problems: {args.problems}")
     print(f"  Runs: {args.runs}")
     print(f"  Budget factor: {args.budget_factor}")
     print(f"  DoE factor: {args.doe_factor}")

@@ -27,26 +27,22 @@ class LHS_sampler:
         self.iterations = iterations
         self.sample_zero = sample_zero
 
-    def __call__(self, dim: int, n_samples: int, random_seed: int = 43) -> np.ndarray:
-        """        This '__call__' overload runs the LHS Experiment and returns a 'NumPy array'.
+    def __call__(self, dim: int, n_samples: int) -> np.ndarray:
+        """This '__call__' overload runs the LHS Experiment and returns a 'NumPy array'.
 
         Args:
             dim: Dimensionality of the samples
             n_samples: Number of samples to generate
-            random_seed: Random seed for reproducibility
 
         Returns:
             NumPy array of samples
         """
-        random_state = np.random.get_state()
-        np.random.seed(random_seed)
         points = lhs(
             n=dim,
             samples=n_samples,
             criterion=self.criterion,
             iterations=self.iterations
         )
-        np.random.set_state(random_state)
 
         if self.sample_zero:
             points[0, :] = np.zeros_like(points[0, :])
@@ -114,7 +110,6 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
             self,
             budget: int,
             n_DoE: Optional[int] = 0,
-            random_seed: int = 43,
             **kwargs
     ):
         """Initialize the Bayesian optimizer."""
@@ -129,7 +124,6 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
                 DoE_parameters = item
 
         full_parameters = self.__build_LHS_parameters(DoE_parameters)
-        self.random_seed = random_seed
 
         # Check that there is some dictionary with the name "LHS_configuration"
         self.__lhs_sampler = LHS_sampler(
@@ -157,8 +151,7 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         # Sample the points
         init_points = self.lhs_sampler(
             self.dimension,
-            self.n_DoE,
-            self.random_seed
+            self.n_DoE
         )
 
         # Rescale the initial points
@@ -274,14 +267,3 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
     def x_evals(self) -> List[np.ndarray]:
         """Get the evaluated points."""
         return self.__x_evals
-
-    @property
-    def random_seed(self) -> int:
-        """Get the random seed."""
-        return self._random_seed
-
-    @random_seed.setter
-    def random_seed(self, new_seed: int) -> None:
-        """Set the random seed."""
-        if isinstance(new_seed, int) and new_seed >= 0:
-            self._random_seed = new_seed

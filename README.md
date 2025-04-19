@@ -15,8 +15,7 @@ PCA-BO addresses these limitations by:
 3. Building surrogate models in a reduced space
 4. Mapping points back to the original space for function evaluations
 
-This approach enables BO to handle higher-dimensional problems while maintaining good convergence properties.
-
+This approach enables BO to handle higher-dimensional problems better while and faster.
 ## Repository Structure
 
 ```
@@ -31,6 +30,7 @@ para-ortho-pca-bo/
 |   |   |--- Visualization.py              # Visualization tools
 |   |--- utils/
 |   |   |--- utilities.py                  # Utility functions
+|   |   |--- tqdm_write_stream.py          # tqdm.write stream utility
 |   |--- AbstractAlgorithm.py              # Abstract optimization class
 |   |--- __init__.py                       # Package initialization
 |--- main.py                               # Command-line script for experiments
@@ -53,6 +53,12 @@ The code requires Python 3.10+ and the following packages:
 - gpytorch==1.14
 - ioh==0.3.18
 - iohinspector==0.0.3
+- pandas==2.2.3
+- matplotlib==3.10.1
+- seaborn==0.13.2
+- polars==1.27.0
+- tqdm==4.67.1
+
 
 Install dependencies:
 

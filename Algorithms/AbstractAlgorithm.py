@@ -2,13 +2,15 @@
 
 __author__ = ["Iván Olarte Rodríguez"]
 
-from typing import Union, Callable, List, Tuple, Optional
+from typing import Union, Callable, List, Tuple, Dict, Optional
 from abc import ABC, abstractmethod
 from ioh.iohcpp.problem import RealSingleObjective, BBOB
 from ioh.iohcpp import MAX
 from ioh.iohcpp import RealBounds
 from math import inf
+from collections import defaultdict
 import numpy as np
+import torch
 
 import warnings
 from botorch.models.utils.assorted import InputDataWarning
@@ -17,6 +19,7 @@ warnings.filterwarnings("ignore", category=InputDataWarning)
 
 
 class AbstractAlgorithm(ABC):
+    TIME_PROFILES = []
 
     @abstractmethod
     def __init__(self, **kwargs):
@@ -48,6 +51,17 @@ class AbstractAlgorithm(ABC):
 
         self.__problem = None
         self.__dimension = None
+
+        self.__random_states = None
+        self.random_seed = None
+
+        # If a pbar is passed - redirect writing output to it and update it every evaluation
+        self._pbar = kwargs.get("pbar")
+
+        # Execution time logging
+        self.timing_logs = defaultdict(list)
+        for time_profile in self.TIME_PROFILES:
+            self.timing_logs[time_profile] = []
     
     @abstractmethod
     def __call__(self,
@@ -102,11 +116,28 @@ class AbstractAlgorithm(ABC):
         self.number_of_function_evaluations = 0
 
         if self.maximization:
-            self.current_best = -inf
+            self.__current_best = -inf
         else:
-            self.current_best = inf
+            self.__current_best = inf
         
         self.__current_best_index = 0
+
+        self.timing_logs = defaultdict(list)
+
+    @property
+    def time_profile_names(self) -> List[str]:
+        """List all timing profile names logged so far."""
+        return list(self.timing_logs.keys())
+
+    @property
+    def average_times(self) -> Dict[str, float]:
+        """Calculate average execution time for each function."""
+        return {func_name: sum(times) / len(times) for func_name, times in self.timing_logs.items() if times}
+
+    @property
+    def total_times(self) -> Dict[str, float]:
+        """Calculate total time spent in each function."""
+        return {func_name: sum(times) for func_name, times in self.timing_logs.items()}
 
     @property
     def number_of_function_evaluations(self) -> int:
@@ -264,6 +295,69 @@ class AbstractAlgorithm(ABC):
             
             else:
                 raise AttributeError("The bounds should be a given in pairs", name="bounds")
+
+    @property
+    def random_seed(self) -> int:
+        """Get the random seed."""
+        return self.__random_seed
+
+    @random_seed.setter
+    def random_seed(self, new_seed: int) -> None:
+        """Set the random seed."""
+        if isinstance(new_seed, int) and new_seed >= 0:
+            self.__random_seed = new_seed
+
+    def impose_random_seed(self) -> None:
+        """Set random seeds for all randomness sources to ensure reproducibility.
+
+        This method saves the current random states and then sets the random seed
+        for numpy, torch CPU, and torch GPU if available.
+        """
+        # Save the current random states before setting a new seed
+        self.save_random_states()
+
+        # Set the numpy random seed
+        np.random.seed(self.__random_seed)
+
+        # Set PyTorch CPU seed
+        torch.manual_seed(self.__random_seed)
+
+        # Set PyTorch GPU seed if available
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.__random_seed)  # PyTorch GPU
+            torch.cuda.manual_seed_all(self.__random_seed)  # Multi-GPU setups
+
+    def save_random_states(self) -> None:
+        """Save the current state of all random number generators as an attribute of self."""
+
+        # Initialize the states dictionary, save numpy and PyTorch CPU state
+        self.__random_states = {"numpy_state": np.random.get_state(), "torch_cpu_state": torch.get_rng_state()}
+
+        # Save PyTorch GPU states if available
+        if torch.cuda.is_available():
+            self.__random_states["torch_gpu_states"] = [torch.cuda.get_rng_state(i) for i in
+                                                        range(torch.cuda.device_count())]
+
+    def restore_random_states(self) -> None:
+        """Restore previously saved random number generator states from self.__random_states."""
+
+        # Check if random states were previously saved
+        if not hasattr(self, '__random_states'):
+            return
+
+        # Restore numpy state
+        if "numpy_state" in self.__random_states:
+            np.random.set_state(self.__random_states["numpy_state"])
+
+        # Restore PyTorch CPU state
+        if "torch_cpu_state" in self.__random_states:
+            torch.set_rng_state(self.__random_states["torch_cpu_state"])
+
+        # Restore PyTorch GPU states if available
+        if torch.cuda.is_available() and "torch_gpu_states" in self.__random_states:
+            for i, state in enumerate(self.__random_states["torch_gpu_states"]):
+                if i < torch.cuda.device_count():
+                    torch.cuda.set_rng_state(state, i)
     
     def compute_space_volume(self) -> float:
         """This function computes the volume of the space defined by the bounds."""

@@ -17,7 +17,7 @@ class ExperimentConfig:
     algorithm_variant: str
     acquisition_function: str
     dimensions: int
-    function_id: int
+    problem_id: int
     instance: int
     budget: int
     n_doe: int
@@ -27,13 +27,13 @@ class ExperimentConfig:
 
 
 config = ExperimentConfig(
-    algorithm_variant="vanilla",  # vanilla / pca
+    algorithm_variant="pca",  # vanilla / pca
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=10,
-    function_id=15,
+    problem_id=15,
     instance=1,
-    budget=100,
+    budget=50,
     n_doe=20,
     random_seed=47,
     doe_params={"criterion": "center", "iterations": 1000},
@@ -56,7 +56,7 @@ if config.algorithm_variant == 'vanilla':
         n_DoE=config.n_doe,
         acquisition_function=config.acquisition_function,
         random_seed=config.random_seed,
-        maximisation=False,
+        maximization=False,
         verbose=True,
         DoE_parameters=config.doe_params
     )
@@ -67,17 +67,27 @@ else:
         var_threshold=config.var_threshold,
         acquisition_function=config.acquisition_function,
         random_seed=config.random_seed,
-        maximisation=False,
+        maximization=False,
         verbose=True,
         DoE_parameters=config.doe_params
     )
 
+logger.add_experiment_attribute("teapot", "yes")
+logger.add_run_attributes(optimizer, ["budget"])
+logger.add_run_attribute("foobar", 1.0)
+logger.add_run_attribute(optimizer, "budget")
+logger.set_experiment_attributes({"teapot": "si"})
+logger.watch(optimizer, ["budget"])
+
 problem = get_problem(
-    config.function_id,
+    config.problem_id,
     instance=config.instance,
     dimension=config.dimensions
 )
 problem.attach_logger(logger)
+
+logger.set_run_attribute("foobar", 2.0)
+logger.set_run_attributes({"foobar": 3.0})
 
 optimizer(problem=problem)
 
