@@ -241,7 +241,8 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
     @budget.setter
     def budget(self, new_budget: int) -> None:
         """Set the optimization budget."""
-        self.__budget = int(new_budget) if new_budget > 0 else None
+        assert new_budget > 0
+        self.__budget = int(new_budget)
 
     @property
     def n_DoE(self) -> int:
