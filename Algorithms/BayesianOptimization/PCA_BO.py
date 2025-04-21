@@ -191,17 +191,9 @@ class PCA_BO(AbstractBayesianOptimizer):
                 weights = self._calculate_weights()
                 # Get the latest point index
                 latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
-                self.visualizer.visualize_pca_step(
-                    X,
-                    self.f_evals,
-                    self.pca,
-                    self.scaler,
-                    weights,
-                    self.obj_function,
-                    cur_iteration,
-                    self.bounds,
-                    latest_idx=latest_idx
-                )
+                self.visualizer.visualize_pca_step(X, self.f_evals, self.data_mean, self.component_matrix, self.scaler,
+                                                   weights, self.obj_function,
+                                                   cur_iteration, self.bounds, latest_idx=latest_idx)
 
             # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(

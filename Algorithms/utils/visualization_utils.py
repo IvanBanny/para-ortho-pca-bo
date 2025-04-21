@@ -287,8 +287,13 @@ class Visualizer:
         self.frames['progress'].append(image)
         plt.close()
 
-    def visualize_pca_step(self, X, f_evals, pca, scaler, weights, obj_function, iteration, bounds=None, latest_idx=None):
-        """Visualize PCA step with contour plot"""
+    def visualize_pca_step(self, X, f_evals, mean, components, scaler, weights, obj_function, iteration, bounds=None, latest_idx=None):
+        """Visualize PCA step with contour plot
+
+        Args:
+            mean:
+            components:
+        """
         if X.shape[1] != 2:  # This visualization only works for 2D problems
             return
 
@@ -355,13 +360,6 @@ class Visualizer:
 
         # Calculate and plot PC directions
         if len(X) > 1:  # Need at least 2 points for PCA
-            X_scaled = scaler.fit_transform(X)
-            X_weighted = X_scaled * np.sqrt(weights[:, np.newaxis])
-            pca.fit(X_weighted)
-
-            # Get the components and mean
-            components = pca.components_
-            mean = scaler.mean_
 
             # Calculate endpoints for PCA vectors (scale them for visibility)
             scale = 2
