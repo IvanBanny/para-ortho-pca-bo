@@ -33,9 +33,9 @@ config = ExperimentConfig(
     dimensions=10,
     problem_id=15,
     instance=1,
-    budget=50,
+    budget=100,
     n_doe=20,
-    random_seed=47,
+    random_seed=45,
     doe_params={"criterion": "center", "iterations": 1000},
     var_threshold=0.95
 )

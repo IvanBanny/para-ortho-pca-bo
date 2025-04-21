@@ -22,7 +22,7 @@ from gpytorch.kernels import MaternKernel
 from sklearn.decomposition import PCA
 from ioh.iohcpp.problem import RealSingleObjective
 
-from Algorithms.BayesianOptimization.visualization_utils import Visualizer
+from Algorithms.utils.visualization_utils import Visualizer
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 
@@ -116,8 +116,12 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Set PCA parameters
         self.n_components = n_components
         self.var_threshold = var_threshold
+
+        self.data_mean = None
         self.pca = None
+        self.component_matrix = None
         self.explained_variance_ratio = None
+        self.reduced_space_dim_num = None
 
         # Set up visualization
         self.visualize = visualize
@@ -199,7 +203,6 @@ class PCA_BO(AbstractBayesianOptimizer):
                     latest_idx=latest_idx
                 )
 
-
             # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
                 model=self.__model_obj,
@@ -208,7 +211,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             )
 
             new_z = self.optimize_acqf_and_get_observation()
-
 
             # Visualize acquisition function if enabled
             if self.visualize and hasattr(self, 'test_points') and hasattr(self, 'last_acquisition_values'):
@@ -241,8 +243,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                     latest_idx=latest_idx
                 )
 
-
-            # Transform the point back to the original space and evaluate
+            # Transform the points back to the original space and evaluate
             for _, new_z_arr in enumerate(new_z):
                 if self.number_of_function_evaluations >= self.budget:
                     break
@@ -268,7 +269,6 @@ class PCA_BO(AbstractBayesianOptimizer):
                     new_f_eval = -1000 if self.maximization else 1000
                 else:
                     new_f_eval = problem(new_x_numpy)
-
 
                 if self._pbar is not None:
                     self._pbar.update(1)
@@ -368,61 +368,51 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Calculate weights
         weights = self._calculate_weights()
 
-        # Create a new PCA instance
-        if self.n_components > 0:
-            # Use fixed number of components
-            n_components = min(self.n_components, X.shape[1], X.shape[0] - 1)
-            self.pca = PCA(n_components=n_components)
-        else:
-            # Use variance threshold to determine number of components
-            self.pca = PCA(n_components=min(X.shape[1], X.shape[0] - 1))
+        # Center the data first
+        self.data_mean = np.mean(X, axis=0)
+        X_centered = X - self.data_mean
 
-        weighted_X = X * np.sqrt(weights[:, np.newaxis])
-
-        start_time = perf_counter()
-        self.pca.fit(weighted_X)
-        self.timing_logs["pca"].append(perf_counter() - start_time)
+        # Apply the weights
+        # Note: applying a square root here, which makes more sense, but isn't mentioned in the original paper
+        weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
 
         if self.visualize and X.shape[1] == 2:  # Only visualize for 2D problems
             self.visualizer.visualize_weighted_transform(X, weights, self.pca)
 
 
-        # If using variance threshold, select components that explain enough variance
-        if self.n_components <= 0:
-            explained_var_ratio = self.pca.explained_variance_ratio_
-            cumulative_var_ratio = np.cumsum(explained_var_ratio)
-            n_components = np.sum(cumulative_var_ratio <= self.var_threshold) + 1
-            n_components = min(n_components, len(explained_var_ratio))
+        # Add a small amount of noise to avoid numerical issues
+        noise = np.random.normal(0, 1e-8, size=weighted_X.shape)
+        weighted_X += noise
 
-            # Ensure we always keep at least one component
-            n_components = max(1, n_components)
+        # Initialize and fit pca
+        self.pca = PCA()
 
-            # Create a new PCA with the determined number of components
-            self.pca = PCA(n_components=n_components, random_state=self.random_seed)
+        start_time = perf_counter()
+        self.pca.fit(weighted_X)
+        self.timing_logs["pca"].append(perf_counter() - start_time)
 
-            # We need to center the data first
-            X_centered = X - np.mean(X, axis=0)
-
-            # Apply the weighted PCA approach
-            weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
-
-            # Add a small amount of noise to avoid numerical issues
-            noise = np.random.normal(0, 1e-8, size=weighted_X.shape)
-            weighted_X += noise
-
-            start_time = perf_counter()
-            self.pca.fit(weighted_X)
-            self.timing_logs["pca"].append(perf_counter() - start_time)
-
+        self.component_matrix = np.copy(self.pca.components_)
         self.explained_variance_ratio = self.pca.explained_variance_ratio_
 
+        n_components = self.n_components
+        if n_components <= 0:
+            # If using variance threshold - select components that explain enough variance
+            cumulative_var_ratio = np.cumsum(self.explained_variance_ratio)
+            n_components = np.sum(cumulative_var_ratio <= self.var_threshold) + 1
+            n_components = max(1, min(n_components, len(self.explained_variance_ratio)))
+
+        self.reduced_space_dim_num = n_components
+
+        # Clip the component matrix
+        self.pca.components_ = self.pca.components_[:self.reduced_space_dim_num]
+
         if self.verbose:
-            print(f"Using {self.pca.n_components_} principal components with "
-                  f"{np.sum(self.pca.explained_variance_ratio_) * 100:.2f}% explained variance")
+            print(f"Using {n_components} principal components with "
+                  f"{np.sum(self.pca.explained_variance_ratio_[:n_components]) * 100:.2f}% explained variance")
 
         # Transform all points to the reduced space
-        # We need to transform the original (unweighted) data
-        Z = self.pca.transform(X)
+        # We need to transform the centered, but unweighted data
+        Z = self.pca.transform(X_centered)
         self.__z_evals = [Z[i, :] for i in range(Z.shape[0])]
 
     def _transform_point_to_original_space(self, z: np.ndarray) -> np.ndarray:
@@ -442,12 +432,12 @@ class PCA_BO(AbstractBayesianOptimizer):
         z_2d = z.reshape(1, -1)
 
         # Transform back to original space
-        x = self.pca.inverse_transform(z_2d)
+        x = self.pca.inverse_transform(z_2d) + self.data_mean
 
-        # Add a small random perturbation to avoid getting stuck
-        # This helps explore the space more effectively
-        noise = np.random.normal(0, 0.01, size=x.shape)
-        x = x + noise
+        # # Add a small random perturbation to avoid getting stuck
+        # # This helps explore the space more effectively
+        # noise = np.random.normal(0, 0.01, size=x.shape)
+        # x = x + noise
 
         return x.ravel()
 
@@ -620,39 +610,17 @@ class PCA_BO(AbstractBayesianOptimizer):
             with torch.no_grad():
                 self.last_acquisition_values = self.acquisition_function(self.test_points.unsqueeze(-2)).numpy()
 
-        # Try several times with different settings if needed
-        for attempt in range(3):
-            try:
-                # Optimize
-                start_time = perf_counter()
-                candidates, acq_value = optimize_acqf(
-                    acq_function=self.acquisition_function,
-                    bounds=bounds_torch,
-                    q=1,
-                    num_restarts=self.__torch_config['NUM_RESTARTS'] * (attempt + 1),
-                    raw_samples=self.__torch_config['RAW_SAMPLES'] * (attempt + 1),
-                    options={"batch_limit": 5, "maxiter": 200 * (attempt + 1)},
-                )
-                self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
-
-                # Check if acquisition value is significantly different from zero
-                if acq_value.item() > 1e-6:
-                    break
-
-                # If we're on the last attempt, add some random noise
-                if attempt == 2:
-                    noise = torch.randn(candidates.shape, device=candidates.device) * 0.1
-                    candidates = candidates + noise
-
-            except Exception as e:
-                if self.verbose:
-                    print(f"Optimization attempt {attempt + 1} failed: {str(e)}")
-                if attempt == 2:
-                    # If all attempts fail, generate a random point
-                    d = bounds_torch.shape[1]
-                    random_point = torch.rand(1, d, device=bounds_torch.device)
-                    # Scale to bounds
-                    candidates = bounds_torch[0] + random_point * (bounds_torch[1] - bounds_torch[0])
+        # Optimize
+        start_time = perf_counter()
+        candidates, _ = optimize_acqf(
+            acq_function=self.acquisition_function,
+            bounds=bounds_torch,
+            q=1,  # self.__torch_config['BATCH_SIZE'],
+            num_restarts=self.__torch_config['NUM_RESTARTS'],
+            raw_samples=self.__torch_config['RAW_SAMPLES'],  # Used for initialization heuristic
+            options={"batch_limit": 5, "maxiter": 200},
+        )
+        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
         # Observe new values
         new_z = candidates.detach()
@@ -719,7 +687,7 @@ class PCA_BO(AbstractBayesianOptimizer):
     def set_acquisition_function_subclass(self) -> None:
         """Set the acquisition function subclass based on the name."""
         if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acq_func_class = ExpectedImprovement
+            self.__acq_func_class = LogExpectedImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
             self.__acq_func_class = ProbabilityOfImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
