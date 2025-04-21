@@ -191,17 +191,9 @@ class PCA_BO(AbstractBayesianOptimizer):
                 weights = self._calculate_weights()
                 # Get the latest point index
                 latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
-                self.visualizer.visualize_pca_step(
-                    X,
-                    self.f_evals,
-                    self.pca,
-                    self.scaler,
-                    weights,
-                    self.obj_function,
-                    cur_iteration,
-                    self.bounds,
-                    latest_idx=latest_idx
-                )
+                self.visualizer.visualize_pca_step(X, self.f_evals, self.data_mean, self.component_matrix, self.scaler,
+                                                   weights, self.obj_function,
+                                                   cur_iteration, self.bounds, latest_idx=latest_idx)
 
             # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
@@ -375,6 +367,10 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Apply the weights
         # Note: applying a square root here, which makes more sense, but isn't mentioned in the original paper
         weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
+
+        if self.visualize and X.shape[1] == 2:  # Only visualize for 2D problems
+            self.visualizer.visualize_weighted_transform(X, weights, self.pca)
+
 
         # Add a small amount of noise to avoid numerical issues
         noise = np.random.normal(0, 1e-8, size=weighted_X.shape)

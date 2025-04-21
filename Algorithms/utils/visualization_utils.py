@@ -27,6 +27,7 @@ class Visualizer:
             'initial_design': [],
             'weights': [],
             'pca': [],
+            'moving': [],
             'acquisition': [],
             'progress': [],
             'gaussian_process': []
@@ -286,8 +287,13 @@ class Visualizer:
         self.frames['progress'].append(image)
         plt.close()
 
-    def visualize_pca_step(self, X, f_evals, pca, scaler, weights, obj_function, iteration, bounds=None, latest_idx=None):
-        """Visualize PCA step with contour plot"""
+    def visualize_pca_step(self, X, f_evals, mean, components, scaler, weights, obj_function, iteration, bounds=None, latest_idx=None):
+        """Visualize PCA step with contour plot
+
+        Args:
+            mean:
+            components:
+        """
         if X.shape[1] != 2:  # This visualization only works for 2D problems
             return
 
@@ -354,13 +360,6 @@ class Visualizer:
 
         # Calculate and plot PC directions
         if len(X) > 1:  # Need at least 2 points for PCA
-            X_scaled = scaler.fit_transform(X)
-            X_weighted = X_scaled * np.sqrt(weights[:, np.newaxis])
-            pca.fit(X_weighted)
-
-            # Get the components and mean
-            components = pca.components_
-            mean = scaler.mean_
 
             # Calculate endpoints for PCA vectors (scale them for visibility)
             scale = 2
@@ -385,6 +384,57 @@ class Visualizer:
         image = np.array(fig.canvas.renderer.buffer_rgba())
         self.frames['pca'].append(image)
         plt.close()
+
+    def visualize_weighted_transform(self, X, weights, pca):
+        """
+        Visualize how weighted PCA transforms points compared to the original points.
+
+        Args:
+            X (np.ndarray): Original points in the input space
+            weights (np.ndarray): Weights for each point
+            pca (PCA): Fitted PCA object
+        """
+        plt.figure(figsize=(10, 8))
+
+        # Plot original points in white
+        plt.scatter(X[:,0], X[:,1], color='white', edgecolor='black',
+                    s=80, label='Original Points', zorder=4)
+
+        # Transform points using weights
+        X_centered = X - np.mean(X, axis=0)
+        weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
+
+        # Plot weighted points in blue
+        plt.scatter(weighted_X[:,0], weighted_X[:,1], color='blue', alpha=0.6,
+                    s=80, label='Weighted Points', zorder=5)
+
+        # Draw lines connecting original and weighted points
+        for i in range(len(X)):
+            plt.plot([X[i,0], weighted_X[i,0]], [X[i,1], weighted_X[i,1]],
+                     'gray', alpha=0.3, linestyle='--', zorder=3)
+
+
+        plt.xlabel('X1')
+        plt.ylabel('X2')
+        plt.title('PCA Transformation with Weights')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+        # Add weight values as text annotations
+        for i, (x, y, w) in enumerate(zip(X[:,0], X[:,1], weights)):
+            plt.annotate(f'w={w:.2f}', (x, y),
+                         xytext=(5, 5), textcoords='offset points',
+                         fontsize=8, alpha=0.7)
+
+        plt.tight_layout()
+
+        # Capture the frame
+        fig = plt.gcf()
+        fig.canvas.draw()
+        image = np.array(fig.canvas.renderer.buffer_rgba())
+        self.frames['moving'].append(image)
+        plt.close()
+
 
     def visualize_gaussian_process(self, model, X_reduced, y, test_points, iteration, bounds=None, latest_idx=None):
         """Visualize the Gaussian Process model's mean and uncertainty.
@@ -588,9 +638,10 @@ class Visualizer:
         save_animation(self.frames['acquisition'], 'acquisition.gif')
         save_animation(self.frames['progress'], 'optimization_progress.gif')
         save_animation(self.frames['pca'], 'pca_visualization.gif')
+        save_animation(self.frames['moving'], 'moving_visualization.gif')
         save_animation(self.frames['gaussian_process'], 'gaussian_process.gif')
 
         # Create and save combined animation
-        combined_frames = self.combine_gifs()
-        if combined_frames:
-            save_animation(combined_frames, 'combined_visualization.gif')
+        #combined_frames = self.combine_gifs()
+        #if combined_frames:
+        #    save_animation(combined_frames, 'combined_visualization.gif')

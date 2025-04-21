@@ -52,7 +52,7 @@ problem = get_problem(
 problem.attach_logger(logger)  # Fixed indentation here
 
 # Set up the Vanilla BO or PCA_BO
-budget = 30
+budget = 11
 n_DoE = 10
 
 optimizer = PCA_BO(
