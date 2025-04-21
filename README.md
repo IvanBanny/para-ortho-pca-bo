@@ -1,23 +1,150 @@
-# Basic Bayesian Optimization Methods with Bo-Torch 
-This repository contains an archetype to build algorithms by using BO-Torch. In this moment this repository uses the `Bo-Torch`, `GPyTorch` and `PyTorch` as main ones to develop the forthcoming methods. Nevertheless, this library just includes a directory archetype and a main function to test the built algorithm with the BBOB problems called from IOH-Experimenter interface (see: https://iohprofiler.github.io/IOHexperimenter/)
+# PCA-Assisted Bayesian Optimization
 
-# Libraries and dependencies
+This repository implements PCA-assisted Bayesian Optimization (PCA-BO), a method for scaling up Bayesian Optimization to higher-dimensional problems by incorporating dimensionality reduction via Principal Component Analysis.
 
-The implementation is in Python 3.10.12 and all the libraries used are listed in `requirements.txt`.
+## Overview
 
-# Structure
-- `main.py` -> An archetype file, which is an example on how to call an instance of one of the 24 BBOB problems by using IOH interface and use the Vanilla-BO Algorithm stored in the repository.
-- _myexperiment_ -> An example of the generated files by a logger to assess the performance of your algorithm on a problem (namely from BBOB).
-- _/Algorithms_ -> A folder which stores the Algorithms to be developed. This repository contains an `AbstractAlgorithm` class, which works as a basic set up of the Algorithm. As this works with IOH, then there are some bypasses whenever the optimization comes from the `BBOB`/`RealSingleObjective` instances from IOH in order to ease the definition of the properties of the Optimizer such as the dimensionality and the bounds. To call an instance of a new algorithm, you must include your new algorithm within the `__init__.py` file in the same level. 
--  _/Algorithms/Bayesian_Optimization_ -> In this folder you may save all the new Bayesian Based Optimizers. There's an `AbstractBayesianOptimizer` class to define an archetypical one. When you make a new BO algorithm, consider building upon this class as a parent class as this might ease your implementation. Additionally, generate a new folder per new variant of the algorithm you might create.
+Bayesian Optimization (BO) is limited in high-dimensional applications due to its:
+1. Increasing computational complexity with dimension
+2. Reduced convergence rate in higher dimensions
+3. Difficulties in exploration-exploitation balance in large search spaces
 
-# Execution from source
-## Dependencies to run from source
+PCA-BO addresses these limitations by:
+1. Learning a linear transformation from evaluated points
+2. Selecting dimensions in the transformed space based on data variability
+3. Building surrogate models in a reduced space
+4. Mapping points back to the original space for function evaluations
 
-Running this code from source requires Python 3.10.14, and the libraries given in `requirements.txt` (Warning: preferably use a virtual environment for this specific project, to avoid breaking the dependencies of your other projects). In Ubuntu, installing the dependencies can be done using the following command:
+This approach enables BO to handle higher-dimensional problems better while and faster.
+## Repository Structure
 
 ```
+para-ortho-pca-bo/
+|--- Algorithms/
+|   |--- BayesianOptimization/
+|   |   |--- AbstractBayesianOptimizer.py  # Base class for BO algorithms
+|   |   |--- PCA_BO.py                     # PCA-assisted BO implementation
+|   |   |--- Vanilla_BO.py                 # Standard BO implementation
+|   |--- Experiment/
+|   |   |--- ExperimentRunner.py           # Experiment framework
+|   |   |--- Visualization.py              # Visualization tools
+|   |--- utils/
+|   |   |--- utilities.py                  # Utility functions
+|   |   |--- tqdm_write_stream.py          # tqdm.write stream utility
+|   |--- AbstractAlgorithm.py              # Abstract optimization class
+|   |--- __init__.py                       # Package initialization
+|--- main.py                               # Command-line script for experiments
+|--- plot_results.py                       # Command-line script for visualization
+|--- requirements.txt                      # Package dependencies
+|--- LICENSE                               # MIT License
+|--- README.md                             # This file
+```
+
+## Installation
+
+### Requirements
+
+The code requires Python 3.10+ and the following packages:
+- numpy==1.26.4
+- torch==2.6.0
+- pyDOE==0.3.8
+- scikit-learn==1.6.1
+- botorch==0.13.0
+- gpytorch==1.14
+- ioh==0.3.18
+- iohinspector==0.0.3
+- pandas==2.2.3
+- matplotlib==3.10.1
+- seaborn==0.13.2
+- polars==1.27.0
+- tqdm==4.67.1
+
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-Then, in order to have a glance on how to use it with any problem, see the `main.py` file to call the optimizer.
+## Usage
+
+### Running Experiments
+
+Run experiments comparing Vanilla BO and PCA-BO:
+
+```bash
+python main.py
+```
+
+Command-line options:
+```
+--dimensions      : Problem dimensions to test [default: 10 20 40]
+--functions       : BBOB function IDs to test [default: 15 16 17]
+--runs            : Number of independent runs [default: 30]
+--budget_factor   : Budget factor (budget = budget_factor * dim + 50) [default: 10]
+--doe_factor      : Initial design size factor (n_doe = doe_factor * dim) [default: 3.0]
+--experiment_dir  : Output directory [default: pca-bo-experiment]
+--acquisition     : Acquisition function [default: expected_improvement]
+--var_threshold   : PCA variance threshold [default: 0.95]
+--verbose         : Enable detailed output
+```
+
+Example:
+```bash
+python main.py --dimensions 5 10 20 --functions 15 21 --runs 10 --verbose
+```
+
+### Visualizing Results
+
+Analyze and visualize experiment results:
+
+```bash
+python plot_results.py
+```
+
+Command-line options:
+```
+--experiment_dir  : Directory containing experiment data [default: pca-bo-experiment]
+--output_dir      : Directory for visualization outputs [default: experiment_dir/visualizations]
+--dimensions      : Dimensions to analyze [default: all]
+--functions       : Function IDs to analyze [default: all]
+--no_save         : Don't save visualization files (display only)
+--format          : Output file format (png, pdf, svg) [default: png]
+--dpi             : DPI for raster outputs [default: 300]
+```
+
+Example:
+```bash
+python plot_results.py --experiment_dir pca-bo-experiment --functions 15 16 --format pdf
+```
+
+## Key Components
+
+### PCA-BO Algorithm
+
+The PCA-BO algorithm works through the following steps:
+
+1. Initial sampling using Latin Hypercube Sampling (LHS)
+2. Ranking-based weighting scheme for evaluated points
+3. Weighted PCA to identify important dimensions
+4. Dimensionality reduction maintaining specified variance
+5. GPR modeling in reduced space
+6. Acquisition function optimization in reduced space
+7. Inverse mapping to original space for new evaluations
+8. Model updating with new data
+
+### Benchmark Problems
+
+The implementation uses the BBOB benchmark suite via the IOH framework, with a focus on:
+- Multi-modal functions with adequate global structure (F15-F19)
+- Multi-modal functions with weak global structure (F20-F24)
+
+The experimental setup follows methodologies from recent research in high-dimensional Bayesian Optimization.
+
+## Development
+
+This repository is part of ongoing research on high-dimensional Bayesian Optimization techniques. The codebase is designed to support additional algorithmic variants, benchmark functions, and analytical tools.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
