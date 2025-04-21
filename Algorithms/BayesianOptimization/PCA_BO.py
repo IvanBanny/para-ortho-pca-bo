@@ -383,6 +383,10 @@ class PCA_BO(AbstractBayesianOptimizer):
         self.pca.fit(weighted_X)
         self.timing_logs["pca"].append(perf_counter() - start_time)
 
+        if self.visualize and X.shape[1] == 2:  # Only visualize for 2D problems
+            self.visualizer.visualize_weighted_transform(X, weights, self.pca)
+
+
         # If using variance threshold, select components that explain enough variance
         if self.n_components <= 0:
             explained_var_ratio = self.pca.explained_variance_ratio_
