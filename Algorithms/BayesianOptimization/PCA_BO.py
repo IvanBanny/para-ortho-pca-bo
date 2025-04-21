@@ -185,16 +185,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
-            # Visualize PCA step if enabled
-            if self.visualize and self.dimension == 2:
-                X = np.vstack(self.x_evals)
-                weights = self._calculate_weights()
-                # Get the latest point index
-                latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
-                self.visualizer.visualize_pca_step(X, self.f_evals, self.data_mean, self.component_matrix, self.scaler,
-                                                   weights, self.obj_function,
-                                                   cur_iteration, self.bounds, latest_idx=latest_idx)
-
             # Set up the acquisition function
             self.acquisition_function = self.acquisition_function_class(
                 model=self.__model_obj,
@@ -249,7 +239,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Ensure the point is within bounds
                 if is_outside_bounds:
                     if self.verbose:
-                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, clipping to boundary")
+                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, giving penalty")
                 #new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
 
                 # Append the new points to both spaces
@@ -281,6 +271,15 @@ class PCA_BO(AbstractBayesianOptimizer):
             self.assign_new_best()
 
             # Visualize optimization progress if enabled
+            # Visualize PCA step if enabled
+            if self.visualize and self.dimension == 2:
+                X = np.vstack(self.x_evals)
+                weights = self._calculate_weights()
+                # Get the latest point index
+                latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
+                self.visualizer.visualize_pca_step(X, self.f_evals, self.data_mean, self.component_matrix, self.scaler,
+                                                   weights, self.obj_function,
+                                                   cur_iteration, None, latest_idx=latest_idx)
             if self.visualize:
                 self.visualizer.visualize_optimization_progress(
                     self.f_evals,
