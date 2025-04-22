@@ -31,7 +31,7 @@ config = ExperimentConfig(
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=10,
-    problem_id=15,
+    problem_id=19,
     instance=1,
     budget=100,
     n_doe=20,

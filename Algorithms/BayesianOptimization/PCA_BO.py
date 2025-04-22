@@ -7,12 +7,6 @@ import torch
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
-from botorch.acquisition.analytic import (
-    LogExpectedImprovement,
-    ProbabilityOfImprovement,
-    UpperConfidenceBound,
-    AnalyticAcquisitionFunction
-)
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
@@ -21,24 +15,12 @@ from ioh.iohcpp.problem import RealSingleObjective
 
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
+from Algorithms.BayesianOptimization.PEI import PenalizedExpectedImprovement
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Filter warnings from sklearn PCA
-
-# Constants for acquisition function names
-ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
-    "expected_improvement",
-    "probability_of_improvement",
-    "upper_confidence_bound"
-)
-
-ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS = {
-    "EI": "expected_improvement",
-    "PI": "probability_of_improvement",
-    "UCB": "upper_confidence_bound"
-}
 
 
 class PCA_BO(AbstractBayesianOptimizer):
@@ -55,7 +37,6 @@ class PCA_BO(AbstractBayesianOptimizer):
         pca (PCA): The PCA transformer object.
         explained_variance_ratio (numpy.ndarray): Explained variance ratio of each component.
         __torch_config (dict): Configuration for the PyTorch operations.
-        __acq_func (AnalyticAcquisitionFunction): The acquisition function.
         __parallel_optimizer (ParallelOptimizer): The parallel optimizer for multi-GPU processing.
     """
 
@@ -67,7 +48,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             n_DoE: int = 0,
             n_components: int = 0,
             var_threshold: float = 0.95,
-            acquisition_function: str = "expected_improvement",
             random_seed: int = 43,
             torch_config: Optional[Dict[str, Any]] = None,
             **kwargs
@@ -80,7 +60,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             n_components (int, optional): Number of principal components to use. If 0, determined
                                         by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
-            acquisition_function (str, optional): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 43.
             torch_config (Dict[str, Any], optional): gpu configuration.
             **kwargs: Additional keyword arguments for the parent class.
@@ -93,7 +72,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         if torch_config is None:
             torch_config = {
                 "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-                "dtype": torch.double,
+                "dtype": torch.float,
                 "BATCH_SIZE": 1,
                 "NUM_RESTARTS": 20,
                 "RAW_SAMPLES": 1024
@@ -116,11 +95,6 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Initialize parallel optimizer for multi-GPU processing
         self.__parallel_optimizer = None
-
-        # Set up the acquisition function
-        self.__acq_func_class = None
-        self.__acq_func = None
-        self.acquisition_function_name = acquisition_function
 
         # Set PCA parameters
         self.n_components = n_components
@@ -176,13 +150,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
-            # Set up the acquisition function
-            self.acquisition_function = self.acquisition_function_class(
-                model=self.__model_obj,
-                best_f=self.current_best,
-                maximize=self.maximization
-            )
-
             new_z = self.optimize_acqf_and_get_observation()
 
             # Transform the points back to the original space and evaluate
@@ -201,18 +168,14 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Ensure the point is within bounds
                 if is_outside_bounds:
                     if self.verbose:
-                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, giving penalty")
-                # new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
+                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, clipping to bounds")
+                    new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
 
                 # Append the new points to both spaces
                 self.x_evals.append(new_x_numpy)
                 self.__z_evals.append(new_z_numpy)
 
-                # Evaluate the function # TODO give correct penalty if outside bounds
-                if is_outside_bounds:
-                    new_f_eval = -1000 if self.maximization else 1000
-                else:
-                    new_f_eval = problem(new_x_numpy)
+                new_f_eval = problem(new_x_numpy)
 
                 if self._pbar is not None:
                     self._pbar.update(1)
@@ -222,12 +185,6 @@ class PCA_BO(AbstractBayesianOptimizer):
 
                 # Increment the number of function evaluations
                 self.number_of_function_evaluations += 1
-
-                # Print if found a better solution
-                if ((self.maximization and new_f_eval > self.current_best) or
-                    (not self.maximization and new_f_eval < self.current_best)) and self.verbose:
-                    print(f"Found better solution: {new_f_eval}")
-                    print(f"At point: {new_x_numpy}")
 
             # Assign the new best
             self.assign_new_best()
@@ -370,72 +327,6 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         return x.ravel()
 
-    def _project_bounds_to_pca_space(self) -> np.ndarray:
-        """Project the original bounds into the PCA space.
-
-        This method creates a grid of points along the boundaries of the original space,
-        transforms them into the PCA space, and then finds the min/max values in each dimension.
-
-        Returns:
-            np.ndarray: Bounds in the PCA space with shape (n_components, 2)
-        """
-        assert self.pca is not None
-
-        # Create a list to store all boundary points
-        boundary_points = []
-
-        n_dims = self.bounds.shape[0]
-
-        # For each dimension, create points along the min and max bounds
-        for dim in range(n_dims):
-            # Number of points to sample along each boundary
-            n_samples = 1000
-
-            # For the min bound of this dimension
-            for i in range(n_samples):
-                point = np.zeros(n_dims)
-                # Set this dimension to its min bound
-                point[dim] = self.bounds[dim, 0]
-                # Set other dimensions to random values within their bounds
-                for other_dim in range(n_dims):
-                    if other_dim != dim:
-                        point[other_dim] = np.random.uniform(
-                            self.bounds[other_dim, 0],
-                            self.bounds[other_dim, 1]
-                        )
-                boundary_points.append(point)
-
-            # For the max bound of this dimension
-            for i in range(n_samples):
-                point = np.zeros(n_dims)
-                # Set this dimension to its max bound
-                point[dim] = self.bounds[dim, 1]
-                # Set other dimensions to random values within their bounds
-                for other_dim in range(n_dims):
-                    if other_dim != dim:
-                        point[other_dim] = np.random.uniform(
-                            self.bounds[other_dim, 0],
-                            self.bounds[other_dim, 1]
-                        )
-                boundary_points.append(point)
-
-        # Convert to numpy array
-        boundary_points = np.vstack(boundary_points)
-
-        # Transform boundary points to PCA space
-        if len(boundary_points) > 0:
-            # Transform to PCA space
-            pca_boundary_points = self.pca.transform(boundary_points)
-
-            # Find min and max values in each PCA dimension
-            pca_bounds = np.zeros((self.pca.n_components_, 2))
-            pca_bounds[:, 0] = np.min(pca_boundary_points, axis=0)
-            pca_bounds[:, 1] = np.max(pca_boundary_points, axis=0)
-
-            return pca_bounds
-
-        return None
-
     def _initialize_model(self, **kwargs):
         """Initialize/fit the Gaussian Process Regression model in the reduced space.
 
@@ -512,15 +403,48 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Convert to torch tensor and move to device
         bounds_torch = torch.from_numpy(z_bounds.transpose()).to(device=self.device, dtype=self.dtype)
 
+        # Define the function to transform points from reduced space to original space
+        def pca_transform_fn(z):
+            # Handle batched inputs
+            z_np = z.cpu().detach().numpy()
+
+            # Quick path for single points
+            if len(z_np.shape) == 1:
+                return torch.tensor([self._transform_point_to_original_space(z_np)],
+                                    device=self.device, dtype=self.dtype)
+
+            # Process each point individually
+            x_list = []
+            for i in range(z_np.shape[0]):
+                x_i = self._transform_point_to_original_space(z_np[i])
+                x_list.append(x_i)
+
+            # Stack results and convert back to tensor
+            x_batch = np.vstack(x_list)
+            return torch.tensor(x_batch, device=self.device, dtype=self.dtype)
+
+        # Create original bounds tensor
+        original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
+
+        # Create the PEI acquisition function
+        acq_function = PenalizedExpectedImprovement(
+            model=self.__model_obj,
+            best_f=self.current_best,
+            original_bounds=original_bounds,
+            pca_transform_fn=pca_transform_fn,
+            maximize=self.maximization,
+            penalty_factor=1000.0
+        )
+
         # Optimize
         start_time = perf_counter()
         candidates, _ = optimize_acqf(
-            acq_function=self.acquisition_function,
+            acq_function=acq_function,
             bounds=bounds_torch,
             q=self.__torch_config['BATCH_SIZE'],
             num_restarts=self.__torch_config['NUM_RESTARTS'],
-            raw_samples=self.__torch_config['RAW_SAMPLES'],  # Used for initialization heuristic
-            options={"batch_limit": 5, "maxiter": 200}
+            raw_samples=self.__torch_config['RAW_SAMPLES'],
+            options={"batch_limit": 5, "maxiter": 500}
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
@@ -544,77 +468,3 @@ class PCA_BO(AbstractBayesianOptimizer):
     def torch_config(self) -> dict:
         """Get the torch configuration."""
         return self.__torch_config
-
-    @property
-    def acquisition_function_name(self) -> str:
-        """Get the acquisition function name."""
-        return self.__acquisition_function_name
-
-    @acquisition_function_name.setter
-    def acquisition_function_name(self, new_name: str) -> None:
-        """Set the acquisition function name.
-
-        Args:
-            new_name (str): Name of the acquisition function.
-
-        Raises:
-            ValueError: If the acquisition function name is not recognized.
-        """
-        # Remove some spaces
-        new_name = new_name.strip()
-
-        # Check in the reduced
-        if new_name in ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS:
-            # Assign the name
-            self.__acquisition_function_name = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
-        else:
-            if new_name.lower() in ALLOWED_ACQUISITION_FUNCTION_STRINGS:
-                self.__acquisition_function_name = new_name
-            else:
-                raise ValueError("Oddly defined name")
-
-        # Run to set up the acquisition function subclass
-        self.set_acquisition_function_subclass()
-
-    def set_acquisition_function_subclass(self) -> None:
-        """Set the acquisition function subclass based on the name."""
-        if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acq_func_class = LogExpectedImprovement
-        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
-            self.__acq_func_class = ProbabilityOfImprovement
-        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
-            self.__acq_func_class = UpperConfidenceBound
-
-    @property
-    def acquisition_function_class(self) -> Callable:
-        """Get the acquisition function class."""
-        return self.__acq_func_class
-
-    @property
-    def acquisition_function(self) -> AnalyticAcquisitionFunction:
-        """Get the stored acquisition function defined at some point of the loop.
-
-        Returns:
-            AnalyticAcquisitionFunction: The acquisition function.
-        """
-        return self.__acq_func
-
-    @acquisition_function.setter
-    def acquisition_function(self, new_acquisition_function: AnalyticAcquisitionFunction) -> None:
-        """Set the acquisition function.
-
-        Args:
-            new_acquisition_function (AnalyticAcquisitionFunction): The acquisition function.
-
-        Raises:
-            AttributeError: If the new acquisition function is not a subclass of AnalyticAcquisitionFunction.
-        """
-        if issubclass(type(new_acquisition_function), AnalyticAcquisitionFunction):
-            # Assign in this case
-            self.__acq_func = new_acquisition_function
-        else:
-            raise AttributeError(
-                "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
-                name="acquisition_function",
-                obj=self.__acq_func
-            )

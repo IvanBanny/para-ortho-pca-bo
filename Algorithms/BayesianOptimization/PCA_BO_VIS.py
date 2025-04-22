@@ -95,7 +95,7 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Check the defaults
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        dtype = torch.double
+        dtype = torch.float
         smoke_test = os.environ.get("SMOKE_TEST")
 
         # Set up the main configuration
@@ -521,14 +521,14 @@ class PCA_BO(AbstractBayesianOptimizer):
                                   np.ones(self.pca.n_components_)]).T
 
         # Convert bounds array to Torch
-        bounds_torch = torch.from_numpy(z_bounds.transpose()).double()
+        bounds_torch = torch.from_numpy(z_bounds.transpose()).float()
 
         # Convert the initial values to Torch Tensors
         train_z = np.array(self.__z_evals).reshape((-1, len(self.__z_evals[0])))
-        train_z = torch.from_numpy(train_z).double()
+        train_z = torch.from_numpy(train_z).float()
 
         train_obj = np.array(self.f_evals).reshape((-1, 1))
-        train_obj = torch.from_numpy(train_obj).double()
+        train_obj = torch.from_numpy(train_obj).float()
 
         start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
@@ -551,7 +551,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         """
         if not self.__z_evals:
             # If no points in reduced space yet, return a random point
-            return torch.from_numpy(np.random.randn(1, 1)).double()
+            return torch.from_numpy(np.random.randn(1, 1)).float()
 
         # Get bounds for the reduced space
         z_array = np.vstack(self.__z_evals)
@@ -572,7 +572,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                 z_bounds[i, 1] = mid + min_range / 2
 
         # Convert to torch tensor
-        bounds_torch = torch.from_numpy(z_bounds.transpose()).double()
+        bounds_torch = torch.from_numpy(z_bounds.transpose()).float()
 
         # Create a grid of test points for visualization if enabled
         if self.visualize:

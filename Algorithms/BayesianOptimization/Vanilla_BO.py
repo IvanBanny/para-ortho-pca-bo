@@ -57,7 +57,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
         # Check the defaults
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        dtype = torch.double
+        dtype = torch.float
         smoke_test = os.environ.get("SMOKE_TEST")
 
         # Set up the main configuration

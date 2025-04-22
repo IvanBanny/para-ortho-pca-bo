@@ -121,7 +121,7 @@ def main():
         var_threshold=args.var_threshold,
         torch_config={
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-            "dtype": torch.double,
+            "dtype": torch.float,
             "BATCH_SIZE": 1,
             "NUM_RESTARTS": 20,
             "RAW_SAMPLES": 1024
