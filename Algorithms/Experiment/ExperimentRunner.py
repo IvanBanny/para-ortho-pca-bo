@@ -4,11 +4,12 @@ This module provides tools for running experiments comparing Vanilla BO and PCA-
 on benchmark problems from the BBOB suite.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 from time import time
 from tqdm.auto import tqdm
 from numpy.linalg import norm
+import torch
 
 from ioh.iohcpp.suite import BBOB
 from ioh.iohcpp.logger import Analyzer
@@ -36,6 +37,7 @@ class ExperimentRunner:
         acquisition_function: str = "expected_improvement",
         pca_components: Optional[int] = None,
         var_threshold: float = 0.95,
+        torch_config: Optional[Dict[str, Any]] = None,
         verbose: bool = False
     ):
         """Initialize the experiment runner with configuration parameters.
@@ -52,6 +54,7 @@ class ExperimentRunner:
             acquisition_function: Name of the acquisition function to use.
             pca_components: Number of PCA components to use (None for automatic).
             var_threshold: Variance threshold for PCA component selection.
+            torch_config: gpu configuration.
             verbose: Whether to print detailed progress information.
         """
         self.algorithms = algorithms
@@ -65,6 +68,7 @@ class ExperimentRunner:
         self.acquisition_function = acquisition_function
         self.pca_components = pca_components
         self.var_threshold = var_threshold
+        self.torch_config = torch_config
         self.verbose = verbose
 
         # Additional logger properties
@@ -170,6 +174,7 @@ class ExperimentRunner:
                                     var_threshold=self.var_threshold,
                                     acquisition_function=self.acquisition_function,
                                     random_seed=random_seed,
+                                    torch_config=self.torch_config,
                                     maximization=maximization,
                                     verbose=self.verbose,
                                     DoE_parameters=self.doe_params,
