@@ -207,9 +207,6 @@ class PCA_BO(AbstractBayesianOptimizer):
         if self._pbar is not None:
             restore_stdout(original_stdout)
 
-    def assign_new_best(self):
-        """Assign the new best solution found so far."""
-        super().assign_new_best()
 
     def _calculate_weights(self) -> np.ndarray:
         """Calculate rank-based weights for PCA transformation.

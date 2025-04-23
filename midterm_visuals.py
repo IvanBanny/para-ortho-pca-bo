@@ -13,7 +13,7 @@ bo_variant = "pca"
 
 # import the BO variants
 from Algorithms import Vanilla_BO
-from Algorithms import PCA_BO
+from Algorithms.BayesianOptimization.PCA_BO_VIS import PCA_BO
 
 
 # Logger setup
@@ -44,7 +44,7 @@ store_positions=True  # store x-variables in the logged files
 )
 # In order to log data for a problem, we only have to attach it to a logger
 problem = get_problem(
-    21,  # An integer denoting one of the 24 BBOB problem
+    2,
     instance=42,  # An instance, meaning the optimum of the problem is changed via some transformations
     dimension=dimensions,  # The problem's dimension
 )
@@ -52,7 +52,7 @@ problem = get_problem(
 problem.attach_logger(logger)  # Fixed indentation here
 
 # Set up the Vanilla BO or PCA_BO
-budget = 11
+budget = 20
 n_DoE = 10
 
 optimizer = PCA_BO(

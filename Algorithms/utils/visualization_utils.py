@@ -287,7 +287,7 @@ class Visualizer:
         self.frames['progress'].append(image)
         plt.close()
 
-    def visualize_pca_step(self, X, f_evals, mean, components, scaler, weights, obj_function, iteration, bounds=None, latest_idx=None):
+    def visualize_pca_step(self, X, pca, f_evals, mean, components, obj_function, iteration, bounds=None, latest_idx=None):
         """Visualize PCA step with contour plot
 
         Args:
@@ -297,7 +297,7 @@ class Visualizer:
         if X.shape[1] != 2:  # This visualization only works for 2D problems
             return
 
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(12, 8))
 
         # Determine plot bounds based on data points
         margin = 0.1
@@ -362,8 +362,11 @@ class Visualizer:
         if len(X) > 1:  # Need at least 2 points for PCA
 
             # Calculate endpoints for PCA vectors (scale them for visibility)
-            scale = 2
-            pc1_endpoints = np.vstack([mean - scale * components[0], mean + scale * components[0]])
+            scale = np.array([[1000]])
+            p1 = pca.inverse_transform(-scale) + mean
+            p2 = pca.inverse_transform(scale) + mean
+
+            pc1_endpoints = np.vstack([p1, p2])
 
             # Plot PC1 (solid line)
             plt.plot(pc1_endpoints[:, 0], pc1_endpoints[:, 1], 'r-',
@@ -371,8 +374,8 @@ class Visualizer:
 
         plt.xlabel(r'$x_1$')
         plt.ylabel(r'$x_2$')
-        plt.title(f'Objective Function Contour Plot (Iteration {iteration})')
-        plt.legend()
+        plt.title(f'Objective Function Contour Plot\n(Iteration {iteration})')
+        plt.legend(bbox_to_anchor=(1.3, 1), loc='upper left')
         plt.grid(False)
         plt.xlim(x_min, x_max)
         plt.ylim(y_min, y_max)
@@ -383,6 +386,7 @@ class Visualizer:
         fig.canvas.draw()
         image = np.array(fig.canvas.renderer.buffer_rgba())
         self.frames['pca'].append(image)
+        plt.show()
         plt.close()
 
     def visualize_weighted_transform(self, X, weights, pca):

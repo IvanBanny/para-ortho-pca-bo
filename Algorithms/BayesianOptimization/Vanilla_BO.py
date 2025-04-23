@@ -158,10 +158,6 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         if self._pbar is not None:
             restore_stdout(original_stdout)
 
-    def assign_new_best(self):
-        """Assign the new best solution."""
-        # Call the super class
-        super().assign_new_best()
 
     def _initialise_model(self, **kwargs):
         """This function initializes/fits the Gaussian Process Regression.

@@ -5,7 +5,6 @@ import os
 from time import perf_counter
 import numpy as np
 import torch
-from sklearn.preprocessing import StandardScaler
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
@@ -127,7 +126,6 @@ class PCA_BO(AbstractBayesianOptimizer):
         self.visualize = visualize
         if self.visualize:
             self.visualizer = Visualizer()
-            self.scaler = StandardScaler()
             self.iteration = 0
             self.obj_function = None
 
@@ -240,7 +238,6 @@ class PCA_BO(AbstractBayesianOptimizer):
                 if is_outside_bounds:
                     if self.verbose:
                         print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, giving penalty")
-                #new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
 
                 # Append the new points to both spaces
                 self.x_evals.append(new_x_numpy)
@@ -274,11 +271,11 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Visualize PCA step if enabled
             if self.visualize and self.dimension == 2:
                 X = np.vstack(self.x_evals)
-                weights = self._calculate_weights()
+                #weights = self._calculate_weights()
                 # Get the latest point index
                 latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
-                self.visualizer.visualize_pca_step(X, self.f_evals, self.data_mean, self.component_matrix, self.scaler,
-                                                   weights, self.obj_function,
+                self.visualizer.visualize_pca_step(X, self.pca, self.f_evals, self.data_mean, self.component_matrix,
+                                                   self.obj_function,
                                                    cur_iteration, None, latest_idx=latest_idx)
             if self.visualize:
                 self.visualizer.visualize_optimization_progress(
@@ -307,10 +304,6 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         if self._pbar is not None:
             restore_stdout(original_stdout)
-
-    def assign_new_best(self):
-        """Assign the new best solution found so far."""
-        super().assign_new_best()
 
     def _calculate_weights(self) -> np.ndarray:
         """Calculate rank-based weights for PCA transformation.
@@ -632,7 +625,6 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Reset visualization-related attributes if visualization is enabled
         if hasattr(self, 'visualize') and self.visualize:
             self.visualizer = Visualizer()
-            self.scaler = StandardScaler()
             self.iteration = 0
             if hasattr(self, 'test_points'):
                 delattr(self, 'test_points')

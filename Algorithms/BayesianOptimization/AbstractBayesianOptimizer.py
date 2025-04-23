@@ -193,7 +193,6 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
 
         return new_array
 
-    @abstractmethod
     def assign_new_best(self):
         """Assign the new best solution found so far."""
         if self.maximization:
