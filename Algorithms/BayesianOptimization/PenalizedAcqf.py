@@ -1,22 +1,22 @@
-from typing import Union
+from typing import Union, Callable
 
 import torch
 from torch import Tensor
-from botorch.acquisition import AcquisitionFunction, LogExpectedImprovement
+from botorch.acquisition import AnalyticAcquisitionFunction
 from botorch.models.model import Model
 from botorch.utils import t_batch_mode_transform
 
 
-class PenalizedExpectedImprovement(AcquisitionFunction):
-    """Penalized Expected Improvement acquisition function as described in the PCA-BO paper by Raponi et al.
+class PenalizedAcqf(AnalyticAcquisitionFunction):
+    """Penalized acquisition function wrapper described in the PCA-BO paper by Raponi et al.
 
-    This acquisition function extends the standard Expected Improvement (EI) by incorporating
-    a penalty for points that would fall outside the original search space when mapped back
-    from the reduced PCA space.
+    This acquisition function extends acquisition_function_class passed as an argument by
+    incorporating a penalty for points that would fall outside the original search space
+    when mapped back from the reduced PCA space.
 
     Attributes:
+        acquisition_function: The acquisition function
         model: The surrogate model (typically a SingleTaskGP)
-        best_f: The best objective value observed so far
         original_bounds: The bounds of the original search space
         pca_transform_fn: Function to map points from reduced to original space
         maximize: Whether to maximize or minimize the objective
@@ -25,6 +25,7 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
 
     def __init__(
             self,
+            acquisition_function_class: Callable,
             model: Model,
             best_f: Union[float, Tensor],
             original_bounds: Tensor,
@@ -35,6 +36,7 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
         """Initialize Penalized Expected Improvement.
 
         Args:
+            acquisition_function_class: Acquisition function to base on
             model: A fitted model
             best_f: The best function value observed so far
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
@@ -45,7 +47,7 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
         super().__init__(model=model)
         self.maximize = maximize
         # Expected Improvement component
-        self.ei = LogExpectedImprovement(model=model, best_f=best_f, maximize=maximize)
+        self.acquisition_function = acquisition_function_class(model=model, best_f=best_f, maximize=maximize)
         # Original bounds of the search space [lower, upper]
         self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
         # PCA transform function reference
@@ -111,7 +113,7 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
             A `batch_shape`-dim Tensor of PEI values at the given design points X
         """
         # Compute regular expected improvement
-        ei_values = self.ei(X)
+        acqf_values = self.acquisition_function(X)
 
         # Check if points would be feasible in original space
         penalty = self._compute_penalty(X)
@@ -122,6 +124,6 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
         is_feasible = (penalty == 0)
 
         # Where feasible, use EI; where infeasible, use penalty
-        pei_values = torch.where(is_feasible, ei_values, penalty)
+        pei_values = torch.where(is_feasible, acqf_values, penalty)
 
         return pei_values

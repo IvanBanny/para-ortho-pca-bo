@@ -7,6 +7,12 @@ import torch
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
+from botorch.acquisition.analytic import (
+    LogExpectedImprovement,
+    ProbabilityOfImprovement,
+    UpperConfidenceBound,
+    AnalyticAcquisitionFunction
+)
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
@@ -15,12 +21,27 @@ from ioh.iohcpp.problem import RealSingleObjective
 
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
-from Algorithms.BayesianOptimization.PEI import PenalizedExpectedImprovement
+from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
+from botorch.exceptions.warnings import NumericsWarning
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Filter warnings from sklearn PCA
+warnings.filterwarnings("ignore", category=NumericsWarning)  # Filter warnings from EI
+
+# Constants for acquisition function names
+ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
+    "expected_improvement",
+    "probability_of_improvement",
+    "upper_confidence_bound"
+)
+
+ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS = {
+    "EI": "expected_improvement",
+    "PI": "probability_of_improvement",
+    "UCB": "upper_confidence_bound"
+}
 
 
 class PCA_BO(AbstractBayesianOptimizer):
@@ -48,6 +69,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             n_DoE: int = 0,
             n_components: int = 0,
             var_threshold: float = 0.95,
+            acquisition_function: str = "expected_improvement",
             random_seed: int = 43,
             torch_config: Optional[Dict[str, Any]] = None,
             **kwargs
@@ -77,6 +99,11 @@ class PCA_BO(AbstractBayesianOptimizer):
                 "NUM_RESTARTS": 20,
                 "RAW_SAMPLES": 1024
             }
+
+        # Set up the acquisition function
+        self.__acq_func_class = None
+        self.__acq_func = None
+        self.acquisition_function_name = acquisition_function
 
         self.__torch_config = torch_config
 
@@ -150,6 +177,13 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
+            # Set up the acquisition function
+            self.acquisition_function = self.acquisition_function_class(
+                model=self.__model_obj,
+                best_f=self.current_best,
+                maximize=self.maximization
+            )
+
             new_z = self.optimize_acqf_and_get_observation()
 
             # Transform the points back to the original space and evaluate
@@ -168,8 +202,8 @@ class PCA_BO(AbstractBayesianOptimizer):
                 # Ensure the point is within bounds
                 if is_outside_bounds:
                     if self.verbose:
-                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds, clipping to bounds")
-                    new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
+                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds")
+                    # new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
 
                 # Append the new points to both spaces
                 self.x_evals.append(new_x_numpy)
@@ -427,7 +461,8 @@ class PCA_BO(AbstractBayesianOptimizer):
         original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
         # Create the PEI acquisition function
-        acq_function = PenalizedExpectedImprovement(
+        acq_function = PenalizedAcqf(
+            acquisition_function_class=self.acquisition_function_class,
             model=self.__model_obj,
             best_f=self.current_best,
             original_bounds=original_bounds,
@@ -468,3 +503,76 @@ class PCA_BO(AbstractBayesianOptimizer):
     def torch_config(self) -> dict:
         """Get the torch configuration."""
         return self.__torch_config
+
+    @property
+    def acquisition_function_name(self) -> str:
+        """Get the acquisition function name."""
+        return self.__acquisition_function_name
+
+    @acquisition_function_name.setter
+    def acquisition_function_name(self, new_name: str) -> None:
+        """Set the acquisition function name.
+
+        Args:
+            new_name (str): Name of the acquisition function.
+
+        Raises:
+            ValueError: If the acquisition function name is not recognized.
+        """
+        # Remove some spaces
+        new_name = new_name.strip()
+
+        # Check in the reduced
+        if new_name in ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS:
+            self.__acquisition_function_name = ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS[new_name]
+        else:
+            if new_name.lower() in ALLOWED_ACQUISITION_FUNCTION_STRINGS:
+                self.__acquisition_function_name = new_name
+            else:
+                raise ValueError(f"Oddly defined name {new_name}")
+
+        # Run to set up the acquisition function subclass
+        self.set_acquisition_function_subclass()
+
+    def set_acquisition_function_subclass(self) -> None:
+        """Set the acquisition function subclass based on the name."""
+        if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
+            self.__acq_func_class = LogExpectedImprovement
+        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
+            self.__acq_func_class = ProbabilityOfImprovement
+        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
+            self.__acq_func_class = UpperConfidenceBound
+
+    @property
+    def acquisition_function_class(self) -> Callable:
+        """Get the acquisition function class."""
+        return self.__acq_func_class
+
+    @property
+    def acquisition_function(self) -> AnalyticAcquisitionFunction:
+        """Get the stored acquisition function defined at some point of the loop.
+
+        Returns:
+            AnalyticAcquisitionFunction: The acquisition function.
+        """
+        return self.__acq_func
+
+    @acquisition_function.setter
+    def acquisition_function(self, new_acquisition_function: AnalyticAcquisitionFunction) -> None:
+        """Set the acquisition function.
+
+        Args:
+            new_acquisition_function (AnalyticAcquisitionFunction): The acquisition function.
+
+        Raises:
+            AttributeError: If the new acquisition function is not a subclass of AnalyticAcquisitionFunction.
+        """
+        if issubclass(type(new_acquisition_function), AnalyticAcquisitionFunction):
+            # Assign in this case
+            self.__acq_func = new_acquisition_function
+        else:
+            raise AttributeError(
+                "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
+                name="acquisition_function",
+                obj=self.__acq_func
+            )
