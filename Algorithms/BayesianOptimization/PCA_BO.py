@@ -22,6 +22,7 @@ from ioh.iohcpp.problem import RealSingleObjective
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
+from Algorithms.utils.vis_utils import PCABOVisualizer
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
@@ -72,6 +73,8 @@ class PCA_BO(AbstractBayesianOptimizer):
             acquisition_function: str = "expected_improvement",
             random_seed: int = 43,
             torch_config: Optional[Dict[str, Any]] = None,
+            visualize: bool = False,
+            vis_output_dir: str = "./visualizations",
             **kwargs
     ):
         """Initialize the PCA-BO optimizer with the given parameters.
@@ -84,12 +87,15 @@ class PCA_BO(AbstractBayesianOptimizer):
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
             random_seed (int, optional): Random seed for reproducibility. Defaults to 43.
             torch_config (Dict[str, Any], optional): gpu configuration.
+            visualize (bool, optional): Whether to visualize the acquisition function. Defaults to False.
+            vis_output_dir (str, optional): Directory to save visualizations. Defaults to "./visualizations".
             **kwargs: Additional keyword arguments for the parent class.
         """
         # Call the superclass
         super().__init__(budget, n_DoE, **kwargs)
 
         self.random_seed = random_seed
+        self.visualize = visualize
 
         if torch_config is None:
             torch_config = {
@@ -135,6 +141,11 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Variables for storing the transformed data
         self.__z_evals = []  # Transformed points in the reduced space
+
+        # Initialize visualizer if requested
+        self.visualizer = None
+        if self.visualize:
+            self.visualizer = PCABOVisualizer(output_dir=vis_output_dir)
 
     def __str__(self):
         return "This is an instance of a PCA-assisted BO Optimizer"
@@ -184,6 +195,21 @@ class PCA_BO(AbstractBayesianOptimizer):
                 maximize=self.maximization
             )
 
+            # Visualize the acquisition function if requested
+            if self.visualize and self.visualizer is not None:
+                # Visualize the acquisition function
+                self.visualizer.visualize_acqf(
+                    acquisition_function=self.acquisition_function,
+                    z_evals=self.__z_evals,
+                    f_evals=self.f_evals,
+                    x_evals=self.x_evals,
+                    component_matrix=self.component_matrix,
+                    current_best_index=self.current_best_index,
+                    reduced_space_dim_num=self.reduced_space_dim_num,
+                    bounds=self.bounds,
+                    iteration=cur_iteration
+                )
+
             new_z = self.optimize_acqf_and_get_observation()
 
             # Transform the points back to the original space and evaluate
@@ -231,6 +257,10 @@ class PCA_BO(AbstractBayesianOptimizer):
                     f"Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
                     flush=True
                 )
+
+        # Save the visualization gif if it was enabled
+        if self.visualize and self.visualizer is not None:
+            self.visualizer.save_animation()
 
         if self.verbose:
             print("Optimization Process finalized!")
@@ -416,27 +446,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # If no points in reduced space yet, return a random point
             return torch.randn(1, 1, device=self.device, dtype=self.dtype)
 
-        # Get bounds for the reduced space
-        z_array = np.vstack(self.__z_evals)
-        z_min = np.min(z_array, axis=0)
-        z_max = np.max(z_array, axis=0)
-        z_range = z_max - z_min
-
-        # Add substantial padding to allow more exploration
-        # This is especially important in the early iterations
-        z_bounds = np.vstack([z_min - 0.5 * z_range, z_max + 0.5 * z_range]).T
-
-        # Ensure bounds aren't too tight early in the optimization
-        min_range = 0.1
-        for i in range(z_bounds.shape[0]):
-            if z_bounds[i, 1] - z_bounds[i, 0] < min_range:
-                mid = (z_bounds[i, 1] + z_bounds[i, 0]) / 2
-                z_bounds[i, 0] = mid - min_range / 2
-                z_bounds[i, 1] = mid + min_range / 2
-
-        # Convert to torch tensor and move to device
-        bounds_torch = torch.from_numpy(z_bounds.transpose()).to(device=self.device, dtype=self.dtype)
-
         # Define the function to transform points from reduced space to original space
         def pca_transform_fn(z):
             # Handle batched inputs
@@ -460,6 +469,11 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Create original bounds tensor
         original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
+        # Calculate z bounds
+        r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
+        z_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
+                    .expand(-1, self.reduced_space_dim_num))
+
         # Create the PEI acquisition function
         acq_function = PenalizedAcqf(
             acquisition_function_class=self.acquisition_function_class,
@@ -475,11 +489,12 @@ class PCA_BO(AbstractBayesianOptimizer):
         start_time = perf_counter()
         candidates, _ = optimize_acqf(
             acq_function=acq_function,
-            bounds=bounds_torch,
+            bounds=z_bounds,
             q=self.__torch_config['BATCH_SIZE'],
             num_restarts=self.__torch_config['NUM_RESTARTS'],
             raw_samples=self.__torch_config['RAW_SAMPLES'],
-            options={"batch_limit": 5, "maxiter": 500}
+            options={"batch_limit": 5, "maxiter": 500},
+            return_best_only=True
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
