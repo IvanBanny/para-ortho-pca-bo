@@ -245,7 +245,7 @@ class PCA_BO(AbstractBayesianOptimizer):
 
                 # Evaluate the function # TODO give correct penalty if outside bounds
                 if is_outside_bounds:
-                    new_f_eval = -1000 if self.maximization else 1000
+                    new_f_eval = problem(new_x_numpy) + (-1e5 if self.maximization else 1e5)
                 else:
                     new_f_eval = problem(new_x_numpy)
 
@@ -276,7 +276,7 @@ class PCA_BO(AbstractBayesianOptimizer):
                 latest_idx = len(self.x_evals) - 1 if len(self.x_evals) > 0 else None
                 self.visualizer.visualize_pca_step(X, self.pca, self.f_evals, self.data_mean, self.component_matrix,
                                                    self.obj_function,
-                                                   cur_iteration, None, latest_idx=latest_idx)
+                                                   cur_iteration, self.bounds, latest_idx=latest_idx)
             if self.visualize:
                 self.visualizer.visualize_optimization_progress(
                     self.f_evals,
@@ -524,9 +524,11 @@ class PCA_BO(AbstractBayesianOptimizer):
         train_obj = torch.from_numpy(train_obj).float()
 
         start_time = perf_counter()
+        train_Yvar = torch.full_like(train_obj, 1e-6)
         self.__model_obj = SingleTaskGP(
             train_z,
             train_obj,
+            train_Yvar,
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
             outcome_transform=Standardize(m=1),
             input_transform=Normalize(
