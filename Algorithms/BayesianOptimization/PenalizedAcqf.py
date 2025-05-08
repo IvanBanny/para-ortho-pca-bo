@@ -30,7 +30,6 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             best_f: Union[float, Tensor],
             original_bounds: Tensor,
             pca_transform_fn: callable,
-            maximize: bool = True,
             penalty_factor: float = 1.0,
     ) -> None:
         """Initialize Penalized Expected Improvement.
@@ -41,13 +40,11 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             best_f: The best function value observed so far
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
             pca_transform_fn: Function that maps points from reduced space to original space
-            maximize: If True, consider the problem a maximization problem
             penalty_factor: Factor to control the strength of the penalty (default: 1.0)
         """
         super().__init__(model=model)
-        self.maximize = maximize
         # Expected Improvement component
-        self.acquisition_function = acquisition_function_class(model=model, best_f=best_f, maximize=maximize)
+        self.acquisition_function = acquisition_function_class(model=model, best_f=best_f)
         # Original bounds of the search space [lower, upper]
         self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
         # PCA transform function reference

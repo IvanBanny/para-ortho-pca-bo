@@ -32,11 +32,11 @@ config = ExperimentConfig(
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
-    problem_id=19,
+    problem_id=20,
     instance=1,
-    budget=30,
-    n_doe=20,
-    random_seed=45,
+    budget=25,
+    n_doe=10,
+    random_seed=47,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,
     var_threshold=0.95

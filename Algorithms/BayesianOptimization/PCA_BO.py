@@ -30,6 +30,7 @@ from botorch.exceptions.warnings import NumericsWarning
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Filter warnings from sklearn PCA
 warnings.filterwarnings("ignore", category=NumericsWarning)  # Filter warnings from EI
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Constants for acquisition function names
 ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
@@ -108,8 +109,9 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Set up the acquisition function
         self.__acq_func_class = None
-        self.__acq_func = None
         self.acquisition_function_name = acquisition_function
+        self.__acq_func = None
+        self.__pacqf = None
 
         self.__torch_config = torch_config
 
@@ -178,10 +180,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             self._pbar.update(self.n_DoE)
 
         # Start the optimization loop
-        for cur_iteration in range(self.budget - self.n_DoE):
-            if self.number_of_function_evaluations >= self.budget:
-                break
-
+        while self.number_of_function_evaluations < self.budget:
             # Initialize z_evals list with transformed points
             self._transform_points_to_reduced_space()
 
@@ -194,21 +193,6 @@ class PCA_BO(AbstractBayesianOptimizer):
                 best_f=self.current_best,
                 maximize=self.maximization
             )
-
-            # Visualize the acquisition function if requested
-            if self.visualize and self.visualizer is not None:
-                # Visualize the acquisition function
-                self.visualizer.visualize_acqf(
-                    acquisition_function=self.acquisition_function,
-                    z_evals=self.__z_evals,
-                    f_evals=self.f_evals,
-                    x_evals=self.x_evals,
-                    component_matrix=self.component_matrix,
-                    current_best_index=self.current_best_index,
-                    reduced_space_dim_num=self.reduced_space_dim_num,
-                    bounds=self.bounds,
-                    iteration=cur_iteration
-                )
 
             new_z = self.optimize_acqf_and_get_observation()
 
@@ -237,6 +221,8 @@ class PCA_BO(AbstractBayesianOptimizer):
 
                 new_f_eval = problem(new_x_numpy)
 
+                print(f"Sampled: x:{new_x_numpy.tolist()} y:{new_f_eval}")
+
                 if self._pbar is not None:
                     self._pbar.update(1)
 
@@ -253,14 +239,21 @@ class PCA_BO(AbstractBayesianOptimizer):
             if self.verbose:
                 print(
                     # f"Iteration: {cur_iteration + 1}",
-                    f"Evaluations: {self.number_of_function_evaluations}/{self.budget}",
+                    f"Evals: {self.number_of_function_evaluations}/{self.budget}",
                     f"Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
                     flush=True
                 )
 
+            if self.visualize and self.visualizer is not None:
+                self.visualizer.visualize_pcabo(torch.tensor(self.x_evals),
+                                                torch.tensor(self.x_evals[self.current_best_index]),
+                                                torch.tensor(self.bounds), torch.tensor(new_x_numpy).unsqueeze(0),
+                                                self.component_matrix, self.data_mean + self.pca.mean_, problem,
+                                                margin=0.1)
+
         # Save the visualization gif if it was enabled
         if self.visualize and self.visualizer is not None:
-            self.visualizer.save_animation()
+            self.visualizer.save_pcabo_gif()
 
         if self.verbose:
             print("Optimization Process finalized!")
@@ -475,20 +468,19 @@ class PCA_BO(AbstractBayesianOptimizer):
                     .expand(-1, self.reduced_space_dim_num))
 
         # Create the PEI acquisition function
-        acq_function = PenalizedAcqf(
+        self.pacqf = PenalizedAcqf(
             acquisition_function_class=self.acquisition_function_class,
             model=self.__model_obj,
             best_f=self.current_best,
             original_bounds=original_bounds,
             pca_transform_fn=pca_transform_fn,
-            maximize=self.maximization,
             penalty_factor=1000.0
         )
 
         # Optimize
         start_time = perf_counter()
         candidates, _ = optimize_acqf(
-            acq_function=acq_function,
+            acq_function=self.pacqf,
             bounds=z_bounds,
             q=self.__torch_config['BATCH_SIZE'],
             num_restarts=self.__torch_config['NUM_RESTARTS'],
@@ -498,11 +490,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
-        # Observe new values
-        new_z = candidates.detach()
-        new_z = new_z.reshape(shape=(1, -1)).detach()
-
-        return new_z
+        return candidates
 
     def __repr__(self):
         return super().__repr__()
