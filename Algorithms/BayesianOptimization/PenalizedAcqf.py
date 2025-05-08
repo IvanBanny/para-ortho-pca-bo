@@ -19,13 +19,12 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         model: The surrogate model (typically a SingleTaskGP)
         original_bounds: The bounds of the original search space
         pca_transform_fn: Function to map points from reduced to original space
-        maximize: Whether to maximize or minimize the objective
         penalty_factor: Factor to control the penalty strength
     """
 
     def __init__(
             self,
-            acquisition_function_class: Callable,
+            acquisition_function: Callable,
             model: Model,
             best_f: Union[float, Tensor],
             original_bounds: Tensor,
@@ -35,7 +34,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         """Initialize Penalized Expected Improvement.
 
         Args:
-            acquisition_function_class: Acquisition function to base on
+            acquisition_function: Acquisition function to base on
             model: A fitted model
             best_f: The best function value observed so far
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
@@ -44,7 +43,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         """
         super().__init__(model=model)
         # Expected Improvement component
-        self.acquisition_function = acquisition_function_class(model=model, best_f=best_f)
+        self.acquisition_function = acquisition_function
         # Original bounds of the search space [lower, upper]
         self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
         # PCA transform function reference
@@ -101,7 +100,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
 
     @t_batch_mode_transform()
     def forward(self, X: Tensor) -> Tensor:
-        """Evaluate the Penalized Expected Improvement on the candidate set X.
+        """Evaluate pacqf on the candidate set X.
 
         Args:
             X: A `batch_shape x q x d`-dim Tensor of inputs
@@ -124,3 +123,24 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         pei_values = torch.where(is_feasible, acqf_values, penalty)
 
         return pei_values
+
+    def log_forward(self, X: Tensor):
+        """Evaluate pacqf on the candidate set X with verbose returns.
+
+        Args:
+            X: A `batch_shape x q x d`-dim Tensor of inputs
+
+        Returns:
+            A `batch_shape`-dim Tensor of acqf values at the given design points X
+            A `batch_shape`-dim Tensor of penalty values at the given design points X
+            A `batch_shape`-dim Tensor of pacqf values at the given design points X
+        """
+        acqf_values = self.acquisition_function(X)
+
+        penalty = self._compute_penalty(X)
+
+        is_feasible = (penalty == 0)
+
+        pei_values = torch.where(is_feasible, acqf_values, penalty)
+
+        return acqf_values, penalty, pei_values

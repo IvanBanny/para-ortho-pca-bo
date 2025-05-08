@@ -1,10 +1,16 @@
 """A standard PCA-BO implementation."""
 
+import os
 from typing import Union, Callable, Optional, Dict, Any
 from time import perf_counter
+
 import numpy as np
+import pandas as pd
 import torch
 from torch import Tensor
+
+from gpytorch.kernels import MaternKernel
+
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition.analytic import (
@@ -15,7 +21,7 @@ from botorch.acquisition.analytic import (
 )
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
-from gpytorch.kernels import MaternKernel
+
 from sklearn.decomposition import PCA
 from ioh.iohcpp.problem import RealSingleObjective
 
@@ -76,6 +82,8 @@ class PCA_BO(AbstractBayesianOptimizer):
             torch_config: Optional[Dict[str, Any]] = None,
             visualize: bool = False,
             vis_output_dir: str = "./visualizations",
+            save_logs: bool = False,
+            log_dir: str = "./logs",
             **kwargs
     ):
         """Initialize the PCA-BO optimizer with the given parameters.
@@ -90,13 +98,14 @@ class PCA_BO(AbstractBayesianOptimizer):
             torch_config (Dict[str, Any], optional): gpu configuration.
             visualize (bool, optional): Whether to visualize the acquisition function. Defaults to False.
             vis_output_dir (str, optional): Directory to save visualizations. Defaults to "./visualizations".
+            save_logs (bool, optional): Whether to log and save detailed data per iteration. Defaults to False.
+            log_dir (str, optional): Directory to save logs. Defaults to "./logs".
             **kwargs: Additional keyword arguments for the parent class.
         """
         # Call the superclass
         super().__init__(budget, n_DoE, **kwargs)
 
         self.random_seed = random_seed
-        self.visualize = visualize
 
         if torch_config is None:
             torch_config = {
@@ -145,9 +154,15 @@ class PCA_BO(AbstractBayesianOptimizer):
         self.__z_evals = []  # Transformed points in the reduced space
 
         # Initialize visualizer if requested
+        self.visualize = visualize
         self.visualizer = None
         if self.visualize:
             self.visualizer = PCABOVisualizer(output_dir=vis_output_dir)
+
+        self.save_logs = save_logs
+        self.log_dir = log_dir
+        if self.save_logs:
+            os.makedirs(self.log_dir, exist_ok=True)
 
     def __str__(self):
         return "This is an instance of a PCA-assisted BO Optimizer"
@@ -187,13 +202,6 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
-            # Set up the acquisition function
-            self.acquisition_function = self.acquisition_function_class(
-                model=self.__model_obj,
-                best_f=self.current_best,
-                maximize=self.maximization
-            )
-
             new_z = self.optimize_acqf_and_get_observation()
 
             # Transform the points back to the original space and evaluate
@@ -221,7 +229,9 @@ class PCA_BO(AbstractBayesianOptimizer):
 
                 new_f_eval = problem(new_x_numpy)
 
-                print(f"Sampled: x:{new_x_numpy.tolist()} y:{new_f_eval}")
+                print(f"Sampled:\n"
+                      f"    x: {new_x_numpy.tolist()}\n"
+                      f"    y: {new_f_eval}")
 
                 if self._pbar is not None:
                     self._pbar.update(1)
@@ -238,12 +248,35 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Print best to screen if verbose
             if self.verbose:
                 print(
-                    # f"Iteration: {cur_iteration + 1}",
                     f"Evals: {self.number_of_function_evaluations}/{self.budget}",
-                    f"Best: x:{self.x_evals[self.current_best_index]} y:{self.current_best}",
+                    f"Best:\n"
+                    f"    x: {self.x_evals[self.current_best_index]}\n"
+                    f"    y: {self.current_best}",
                     flush=True
                 )
 
+            # Save logs
+            if self.save_logs:
+                acqf_values_log, penalty_log, pei_values_log = self.pacqf.log_forward(
+                    torch.tensor(self.__z_evals).to(device=self.device, dtype=self.dtype).unsqueeze(1)
+                )
+                df = pd.DataFrame({
+                    "x": self.x_evals,
+                    "z": self.__z_evals,
+                    "p": self.f_evals,
+                    "acqf": acqf_values_log.detach().numpy(),
+                    "penalty": penalty_log.detach().numpy(),
+                    "pacqf": pei_values_log.detach().numpy(),
+                })
+
+                run_log_dir = os.path.join(
+                    self.log_dir,
+                    f"log_{problem.meta_data.problem_id}_{problem.meta_data.instance}"
+                )
+                os.makedirs(run_log_dir, exist_ok=True)
+                df.to_csv(os.path.join(run_log_dir, f"{self.number_of_function_evaluations}.csv"), index=False)
+
+            # Create visualizations
             if self.visualize and self.visualizer is not None:
                 self.visualizer.visualize_pcabo(torch.tensor(self.x_evals),
                                                 torch.tensor(self.x_evals[self.current_best_index]),
@@ -251,9 +284,12 @@ class PCA_BO(AbstractBayesianOptimizer):
                                                 self.component_matrix, self.data_mean + self.pca.mean_, problem,
                                                 margin=0.1)
 
-        # Save the visualization gif if it was enabled
+        # Save the visualization gifs if it was enabled
         if self.visualize and self.visualizer is not None:
-            self.visualizer.save_pcabo_gif()
+            self.visualizer.save_gifs(
+                postfix=f"{problem.meta_data.problem_id}_{problem.meta_data.instance}",
+                duration=1000
+            )
 
         if self.verbose:
             print("Optimization Process finalized!")
@@ -350,7 +386,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         self.pca.components_ = self.pca.components_[:self.reduced_space_dim_num]
 
         if self.verbose:
-            print(f"Using {n_components} principal components with "
+            print(f"\nUsing {n_components} principal components with "
                   f"{np.sum(self.pca.explained_variance_ratio_[:n_components]) * 100:.2f}% explained variance")
 
         # Transform all points to the reduced space
@@ -467,9 +503,16 @@ class PCA_BO(AbstractBayesianOptimizer):
         z_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
                     .expand(-1, self.reduced_space_dim_num))
 
+        # Set up the acquisition function
+        self.acquisition_function = self.acquisition_function_class(
+            model=self.__model_obj,
+            best_f=self.current_best,
+            maximize=self.maximization
+        )
+
         # Create the PEI acquisition function
         self.pacqf = PenalizedAcqf(
-            acquisition_function_class=self.acquisition_function_class,
+            acquisition_function=self.acquisition_function,
             model=self.__model_obj,
             best_f=self.current_best,
             original_bounds=original_bounds,

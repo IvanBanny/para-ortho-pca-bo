@@ -32,10 +32,10 @@ config = ExperimentConfig(
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
-    problem_id=20,
+    problem_id=19,
     instance=1,
-    budget=25,
-    n_doe=10,
+    budget=20,
+    n_doe=5,
     random_seed=47,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,
@@ -73,6 +73,7 @@ else:
         maximization=False,
         verbose=True,
         visualize=True,
+        save_logs=True,
         DoE_parameters=config.doe_params
     )
 

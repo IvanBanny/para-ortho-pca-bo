@@ -1,10 +1,11 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
-import torch
-from typing import List, Optional, Tuple, Any
+from collections import defaultdict
+from typing import Optional, Tuple, Any
 from PIL import Image
 import io
+import torch
 
 
 class PCABOVisualizer:
@@ -25,7 +26,7 @@ class PCABOVisualizer:
         os.makedirs(output_dir, exist_ok=True)
 
         # List to store plot images
-        self.pcabo_images: List[Image.Image] = []
+        self.images: defaultdict = defaultdict(list)
 
     def visualize_pcabo(
         self,
@@ -58,7 +59,7 @@ class PCABOVisualizer:
         """
         fig, ax = plt.subplots(1, 1, figsize=fig_size, dpi=dpi)
 
-        # Calculate landcape points
+        # Calculate landscape points
         min_vis = torch.min(b[:2, 0], x[:, :2].min(dim=0).values)
         max_vis = torch.max(b[:2, 1], x[:, :2].max(dim=0).values)
         margin = (max_vis - min_vis) * margin
@@ -117,45 +118,49 @@ class PCABOVisualizer:
         buf.seek(0)
 
         img = Image.open(buf)
-        self.pcabo_images.append(img)
+        self.images["pcabo"].append(img)
 
         plt.close(fig)
 
-    def save_pcabo_gif(self, filename: str = "pcabo.gif", duration: int = 1000, loop: int = 0) -> None:
+    def save_gifs(self, postfix: Optional[str] = None, duration: int = 1000, loop: int = 0) -> None:
         """Save the collected images as a GIF.
 
         Args:
-            filename (str): GIF name
+            postfix (str): GIF name postfix e.g. "pcabo_{postfix}.gif"
             duration (int): Duration per frame in ms
             loop (int): The number of times to loop the GIF (0 for infinite)
         """
-        if not self.pcabo_images:
-            raise ValueError("No plots to save.")
-
-        self.pcabo_images[0].save(
-            os.path.join(self.output_dir, filename),
-            save_all=True,
-            append_images=self.pcabo_images[1:],
-            duration=duration,
-            loop=loop,
-            optimize=True
-        )
+        for k in self.images.keys():
+            if len(self.images[k]) > 0:
+                self.images[k][0].save(
+                    os.path.join(self.output_dir, f"{k}{'' if postfix is None else '_' + postfix}.gif"),
+                    save_all=True,
+                    append_images=self.images[k][1:],
+                    duration=duration,
+                    loop=loop,
+                    optimize=True
+                )
 
     def clear(self) -> None:
         """Clear all stored images."""
-        self.pcabo_images = []
+        self.images = defaultdict(list)
 
-    def get_pcabo_frame(self, index: int) -> Image.Image:
+    def get_frame(self, m: str, index: int) -> Image.Image:
         """Get a frame by index.
 
         Args:
+            m (str): visualization codename: "pcabo" or "acqf"
             index (int): Frame index
         """
-        if index < 0 or index >= len(self.pcabo_images):
-            raise IndexError(f"Index {index} out of range (0-{len(self.pcabo_images) - 1})")
+        if index < 0 or index >= len(self.images[m]):
+            raise IndexError(f"Index {index} out of range (0-{len(self.images[m]) - 1})")
 
-        return self.pcabo_images[index]
+        return self.images[m][index]
 
-    def __len__(self) -> int:
-        """Get the number of saved frames."""
-        return len(self.pcabo_images)
+    def __len__(self, m: str) -> int:
+        """Get the number of saved frames.
+
+        Args:
+            m (str): visualization codename: "pcabo" or "acqf"
+        """
+        return len(self.images[m])
