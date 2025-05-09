@@ -261,7 +261,7 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         # Apply the weights
         # Note: applying a square root here, which makes more sense, but isn't mentioned in the original paper
-        weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
+        weighted_X = X_centered * weights[:, np.newaxis]
 
         # Add a small amount of noise to avoid numerical issues
         noise = np.random.normal(0, 1e-8, size=weighted_X.shape)

@@ -2,9 +2,10 @@ from typing import Union
 
 import torch
 from torch import Tensor
-from botorch.acquisition import AcquisitionFunction, LogExpectedImprovement
+from botorch.acquisition import AcquisitionFunction, ExpectedImprovement
 from botorch.models.model import Model
 from botorch.utils import t_batch_mode_transform
+from typing import Callable, Union
 
 
 class PenalizedExpectedImprovement(AcquisitionFunction):
@@ -24,104 +25,66 @@ class PenalizedExpectedImprovement(AcquisitionFunction):
     """
 
     def __init__(
-            self,
-            model: Model,
-            best_f: Union[float, Tensor],
-            original_bounds: Tensor,
-            pca_transform_fn: callable,
-            maximize: bool = True,
-            penalty_factor: float = 1.0,
+        self,
+        model: Model,
+        best_f: Union[float, torch.Tensor],
+        original_bounds: torch.Tensor,
+        pca_transform_fn: Callable,
+        X_mean: torch.Tensor,
+        maximize: bool = True,
+        penalty_factor: float = 1.0,
     ) -> None:
-        """Initialize Penalized Expected Improvement.
-
-        Args:
-            model: A fitted model
-            best_f: The best function value observed so far
-            original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
-            pca_transform_fn: Function that maps points from reduced space to original space
-            maximize: If True, consider the problem a maximization problem
-            penalty_factor: Factor to control the strength of the penalty (default: 1.0)
-        """
         super().__init__(model=model)
         self.maximize = maximize
-        # Expected Improvement component
-        self.ei = LogExpectedImprovement(model=model, best_f=best_f, maximize=maximize)
-        # Original bounds of the search space [lower, upper]
-        self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
-        # PCA transform function reference
+        self.ei = ExpectedImprovement(model=model, best_f=best_f, maximize=maximize)
         self.pca_transform_fn = pca_transform_fn
-        # Penalty scaling factor
         self.penalty_factor = penalty_factor
 
-    def _compute_penalty(self, X: Tensor) -> Tensor:
-        """Compute the penalty for points that would fall outside the original space.
+        # Register original bounds and X_mean as buffers for GPU compatibility
+        self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
+        self.register_buffer("X_mean", torch.as_tensor(X_mean))
 
-        Args:
-            X: A `batch_shape x q x d`-dim Tensor of inputs
-
-        Returns:
-            A `batch_shape`-dim Tensor of penalties (non-positive values)
+    def _compute_penalty(self, X: torch.Tensor) -> torch.Tensor:
         """
-        # Save original batch shape for reshaping at the end
+        Compute penalty for points that are outside the original bounds.
+        Penalty is negative and equals the summed distance outside the bounds.
+        """
         batch_shape = X.shape[:-2]
         q = X.shape[-2]
-
-        # Reshape input for processing
         X_flat = X.view(-1, X.shape[-1])
 
-        # Map points to original space using the provided transformation function
-        X_orig = self.pca_transform_fn(X_flat)
+        # Inverse PCA transform and add X_mean
+        X_orig = self.pca_transform_fn(X_flat) + self.X_mean
 
-        # Get original bounds
         lower_bounds = self.original_bounds[:, 0]
         upper_bounds = self.original_bounds[:, 1]
 
-        # Check if points are outside bounds
-        outside_lower = torch.clamp(lower_bounds - X_orig, min=0)
-        outside_upper = torch.clamp(X_orig - upper_bounds, min=0)
+        # Compute distances outside bounds
+        below = torch.clamp(lower_bounds - X_orig, min=0)
+        above = torch.clamp(X_orig - upper_bounds, min=0)
+        penalty_dist = torch.sum(below + above, dim=-1)  # (batch_size,)
 
-        # Compute distance to boundary for points outside bounds
-        distance_to_boundary = torch.sum(outside_lower + outside_upper, dim=-1)
+        # Reshape and get min across q
+        penalty_dist = penalty_dist.view(*batch_shape, q)
+        min_penalty_dist = penalty_dist.min(dim=-1)[0]  # shape: batch_shape
 
-        # Reshape to match batch dimensions and q
-        distance_to_boundary = distance_to_boundary.view(*batch_shape, q)
-
-        # We need to aggregate across q-dimension to match expected output shape
-        # Using minimum distance (most conservative approach)
-        distance_to_boundary = distance_to_boundary.min(dim=-1)[0]
-
-        # Calculate penalty (negative distance, so points outside have negative values)
-        penalty = -self.penalty_factor * distance_to_boundary
-
-        # Points inside bounds get zero penalty, points outside get negative penalty
-        # Ensure all feasible points have exactly zero penalty
-        is_feasible = (distance_to_boundary == 0)
-        penalty = torch.where(is_feasible, torch.zeros_like(penalty), penalty)
-
+        # If feasible (inside bounds), penalty is zero
+        penalty = -self.penalty_factor * min_penalty_dist
+        penalty = torch.where(min_penalty_dist == 0, torch.zeros_like(penalty), penalty)
         return penalty
 
     @t_batch_mode_transform()
-    def forward(self, X: Tensor) -> Tensor:
-        """Evaluate the Penalized Expected Improvement on the candidate set X.
-
-        Args:
-            X: A `batch_shape x q x d`-dim Tensor of inputs
-
-        Returns:
-            A `batch_shape`-dim Tensor of PEI values at the given design points X
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
-        # Compute regular expected improvement
-        ei_values = self.ei(X)
-
-        # Check if points would be feasible in original space
+        Evaluate penalized expected improvement at X.
+        If point is feasible, return EI. Otherwise, return penalty.
+        """
+        ei = self.ei(X)  # shape: batch_shape
         penalty = self._compute_penalty(X)
-
-        # Combine EI with penalty:
-        # - For feasible points, use EI value (penalty is 0)
-        # - For infeasible points, use penalty (negative value)
         is_feasible = (penalty == 0)
 
-        # Where feasible, use EI; where infeasible, use penalty
-        pei_values = torch.where(is_feasible, ei_values, penalty)
+        # Use EI if feasible, otherwise penalty
+        pei = torch.where(is_feasible, ei, penalty)
+        return pei
 
-        return pei_values
+

@@ -5,12 +5,14 @@ import os
 from time import perf_counter
 import numpy as np
 import torch
+from botorch import fit_gpytorch_mll
+from gpytorch import ExactMarginalLogLikelihood
 from torch import Tensor
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition.analytic import (
     ExpectedImprovement,
-    LogExpectedImprovement,
+    ExpectedImprovement,
     ProbabilityOfImprovement,
     UpperConfidenceBound,
     AnalyticAcquisitionFunction
@@ -408,9 +410,6 @@ class PCA_BO(AbstractBayesianOptimizer):
         Returns:
             np.ndarray: Corresponding point in the original space.
         """
-        # Handle the case before PCA is fitted
-        if self.pca is None:
-            return np.random.uniform(self.bounds[:, 0], self.bounds[:, 1])
 
         # Reshape to 2D for sklearn
         z_2d = z.reshape(1, -1)
@@ -525,6 +524,8 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         start_time = perf_counter()
         train_Yvar = torch.full_like(train_obj, 1e-6)
+
+        # Initialize the GP model
         self.__model_obj = SingleTaskGP(
             train_z,
             train_obj,
@@ -537,6 +538,10 @@ class PCA_BO(AbstractBayesianOptimizer):
             )
         )
         self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
+
+        # Fit the model using exact marginal log likelihood
+        mll = ExactMarginalLogLikelihood(self.__model_obj.likelihood, self.__model_obj)
+        fit_gpytorch_mll(mll)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:
         """Optimize the acquisition function in the reduced space.
@@ -606,7 +611,10 @@ class PCA_BO(AbstractBayesianOptimizer):
             raw_samples=self.__torch_config['RAW_SAMPLES'],  # Used for initialization heuristic
             options={"batch_limit": 5, "maxiter": 200},
         )
+        print(candidates, self._transform_point_to_original_space(candidates[0]))
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
+
+        self.plot_acqf_table(bounds_torch)
 
         # Observe new values
         new_z = candidates.detach()
@@ -672,7 +680,7 @@ class PCA_BO(AbstractBayesianOptimizer):
     def set_acquisition_function_subclass(self) -> None:
         """Set the acquisition function subclass based on the name."""
         if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acq_func_class = LogExpectedImprovement
+            self.__acq_func_class = ExpectedImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
             self.__acq_func_class = ProbabilityOfImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
@@ -711,3 +719,5 @@ class PCA_BO(AbstractBayesianOptimizer):
                 name="acquisition_function",
                 obj=self.__acq_func
             )
+    def plot_acqf_table(self, bounds_torch):
+        pass

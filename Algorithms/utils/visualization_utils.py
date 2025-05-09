@@ -181,6 +181,8 @@ class Visualizer:
         if test_points is None:
             return
 
+        print(f"AAAA {X_reduced}")
+
         plt.figure(figsize=(10, 6))
         if X_reduced.shape[1] == 1:
             plt.scatter(X_reduced.flatten(), np.zeros_like(X_reduced.flatten()),

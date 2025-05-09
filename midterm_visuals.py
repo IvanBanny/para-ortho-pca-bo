@@ -8,6 +8,8 @@ from ioh.iohcpp.logger import Analyzer
 from ioh.iohcpp.logger.property import RAWYBEST
 from ioh.iohcpp.logger.trigger import Each, ON_IMPROVEMENT, ALWAYS  # Triggers defining how often to log results
 
+from Algorithms.BayesianOptimization.acqf_vis import TableAcqfVis
+
 # Choose your BO variant here: "vanilla" or "pca"
 bo_variant = "pca"
 
@@ -44,18 +46,18 @@ store_positions=True  # store x-variables in the logged files
 )
 # In order to log data for a problem, we only have to attach it to a logger
 problem = get_problem(
-    2,
-    instance=42,  # An instance, meaning the optimum of the problem is changed via some transformations
+    9,
+    instance=0,  # An instance, meaning the optimum of the problem is changed via some transformations
     dimension=dimensions,  # The problem's dimension
 )
 
 problem.attach_logger(logger)  # Fixed indentation here
 
 # Set up the Vanilla BO or PCA_BO
-budget = 20
+budget = 30
 n_DoE = 10
 
-optimizer = PCA_BO(
+optimizer = TableAcqfVis(
     budget=budget,
     n_DoE=n_DoE,
     n_components=1,  # You can tune this as needed
