@@ -4,8 +4,10 @@ from typing import Union, Callable, Optional
 import os
 from time import perf_counter
 import numpy as np
+
 import torch
 from torch import Tensor
+
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition.analytic import (
@@ -17,6 +19,9 @@ from botorch.acquisition.analytic import (
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.fit import fit_gpytorch_mll
+
 from ioh.iohcpp.problem import RealSingleObjective
 
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
@@ -160,7 +165,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
 
     def _initialise_model(self, **kwargs):
-        """This function initializes/fits the Gaussian Process Regression.
+        """This function initializes and fits the Gaussian Process Regression.
 
         Args:
             **kwargs: Left these keyword arguments for upcoming developments
@@ -175,6 +180,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         train_obj = np.array(self.f_evals).reshape((-1, 1))
         train_obj = torch.from_numpy(train_obj).detach()
 
+        # Initialize and fit GP
         start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             train_x,
@@ -189,6 +195,8 @@ class Vanilla_BO(AbstractBayesianOptimizer):
                 bounds=bounds_torch
             )
         )
+        mll = ExactMarginalLogLikelihood(self.__model_obj.likelihood, self.__model_obj)
+        fit_gpytorch_mll(mll)
         self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:

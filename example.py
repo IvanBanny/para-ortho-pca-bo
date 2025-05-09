@@ -24,19 +24,21 @@ class ExperimentConfig:
     random_seed: int
     doe_params: dict
     var_threshold: float
+    n_components: int
 
 
 config = ExperimentConfig(
     algorithm_variant="pca",  # vanilla / pca
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
-    dimensions=10,
+    dimensions=2,
     problem_id=19,
     instance=1,
-    budget=100,
-    n_doe=20,
-    random_seed=45,
+    budget=20,
+    n_doe=5,
+    random_seed=47,
     doe_params={"criterion": "center", "iterations": 1000},
+    n_components=1,
     var_threshold=0.95
 )
 
@@ -64,20 +66,16 @@ else:
     optimizer = PCA_BO(
         budget=config.budget,
         n_DoE=config.n_doe,
+        n_components=config.n_components,
         var_threshold=config.var_threshold,
         acquisition_function=config.acquisition_function,
         random_seed=config.random_seed,
         maximization=False,
         verbose=True,
+        visualize=True,
+        save_logs=True,
         DoE_parameters=config.doe_params
     )
-
-logger.add_experiment_attribute("teapot", "yes")
-logger.add_run_attributes(optimizer, ["budget"])
-logger.add_run_attribute("foobar", 1.0)
-logger.add_run_attribute(optimizer, "budget")
-logger.set_experiment_attributes({"teapot": "si"})
-logger.watch(optimizer, ["budget"])
 
 problem = get_problem(
     config.problem_id,
@@ -86,12 +84,9 @@ problem = get_problem(
 )
 problem.attach_logger(logger)
 
-logger.set_run_attribute("foobar", 2.0)
-logger.set_run_attributes({"foobar": 3.0})
-
 optimizer(problem=problem)
 
-print("The distance from optimum is: ", norm(problem.state.current_best.x-problem.optimum.x))
-print("The regret is: ", problem.state.current_best.y - problem.optimum.y)
+# print("The distance from optimum is: ", norm(problem.state.current_best.x-problem.optimum.x))
+# print("The regret is: ", problem.state.current_best.y - problem.optimum.y)
 
 logger.close()
