@@ -7,7 +7,7 @@ Vanilla BO and PCA-BO algorithms.
 
 import os
 import argparse
-from Algorithms.Experiment.Visualization import ExperimentVisualizer
+from AlgorithmsOLD.Experiment.Visualization import ExperimentVisualizer
 
 
 def parse_arguments():

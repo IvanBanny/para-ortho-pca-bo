@@ -9,7 +9,7 @@ from ioh.iohcpp.logger import Analyzer
 from ioh.iohcpp.logger.property import RAWYBEST
 from ioh.iohcpp.logger.trigger import ALWAYS
 
-from Algorithms import Vanilla_BO, PCA_BO
+from AlgorithmsOLD import Vanilla_BO, PCA_BO
 
 
 @dataclass

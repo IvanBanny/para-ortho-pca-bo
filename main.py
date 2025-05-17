@@ -108,7 +108,7 @@ def main():
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
-        algorithms=["pca"],
+        algorithms=["clean-pca"],
         dimensions=args.dimensions,
         problem_ids=args.problems,
         num_runs=args.runs,
@@ -119,13 +119,13 @@ def main():
         acquisition_function=args.acquisition,
         pca_components=0,  # Automatic selection based on var_threshold
         var_threshold=args.var_threshold,
-        torch_config={
-            "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-            "dtype": torch.float,
-            "BATCH_SIZE": 1,
-            "NUM_RESTARTS": 20,
-            "RAW_SAMPLES": 1024
-        },
+        #torch_config={
+        #    "device": torch.device("cpu"),
+        #    "dtype": torch.float,
+        #    "BATCH_SIZE": 1,
+        #    "NUM_RESTARTS": 20,
+        #    "RAW_SAMPLES": 1024
+        #},
         verbose=args.verbose
     )
 
