@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 import os
 from collections import defaultdict
 from typing import Optional, Tuple, Any
@@ -35,9 +37,11 @@ class PCABOVisualizer:
         b: torch.Tensor,
         c: torch.Tensor,
         component_matrix: torch.Tensor,
+        n_components: int,
         mu: torch.Tensor,
-        p: Optional[Any] = None,
-        fig_size: Tuple[int, int] = (13, 10),
+        p: Any,
+        acqf: Any,
+        fig_size: Tuple[int, int] = (15, 10),
         dpi: int = 100,
         n_points: int = 100,
         margin: float = 0.2,
@@ -50,8 +54,10 @@ class PCABOVisualizer:
             b (torch.Tensor): Problem bounds
             c (torch.Tensor): Candidates selected on this iteration
             component_matrix (torch.Tensor): The PCA component matrix
+            n_components (int): The number of components in use
             mu (torch.Tensor): mu + mu' - the center of PCA
-            p (Optional[Any]): The problem object for mode = 'p'
+            p (Any): The problem object for mode = 'p'
+            acqf (Any): The acquisition function
             fig_size (Tuple[int, int]): Figure size for the plots
             dpi (int): DPI for the plots
             n_points (int): Number of points in each dimension for contour plot grid
@@ -89,11 +95,25 @@ class PCABOVisualizer:
 
         # Plot PCs
         line_margin = 0.1
-        pc_x = torch.linspace(min_vis[0] - line_margin, max_vis[0] + line_margin, 2)
+        pc_x = torch.linspace(min_vis[0] - line_margin, max_vis[0] + line_margin, 500)
         pc1_y = (component_matrix[0][1] / component_matrix[0][0]) * (pc_x - mu[0]) + mu[1]
         pc2_y = (component_matrix[1][1] / component_matrix[1][0]) * (pc_x - mu[0]) + mu[1]
-        plt.plot(pc_x, pc1_y, color='green', zorder=2)
-        plt.plot(pc_x, pc2_y, color='green', alpha=0.2, zorder=2)
+
+        pc1_p = torch.stack([pc_x, pc1_y]).T.reshape(-1, 1, 2)
+        pc1_segments = torch.cat([pc1_p[: -1], pc1_p[1:]], 1)
+
+        pc1_p_r = (pc1_p.reshape(-1, 2) - mu) @ component_matrix[: n_components].T
+        pc1_acqf = acqf(pc1_p_r.unsqueeze(1))
+
+        pc1_norm = Normalize(vmin=min(pc1_acqf), vmax=max(pc1_acqf))
+        pc1_lc = LineCollection(pc1_segments, cmap="viridis", norm=pc1_norm, zorder=2)
+        pc1_lc.set_array(pc1_acqf.detach().numpy())
+        pc1_lc.set_linewidth(2)
+        ax.add_collection(pc1_lc)
+        fig.colorbar(pc1_lc, ax=ax)
+
+        # plt.plot(pc_x, pc1_y, color='green', zorder=2)
+        plt.plot(pc_x, pc2_y, color='green', alpha=0.3, zorder=2)
 
         # Plot bounds
         ax.add_patch(patches.Rectangle(b[:2, 0], b[0, 1] - b[0, 0], b[1, 1] - b[1, 0],

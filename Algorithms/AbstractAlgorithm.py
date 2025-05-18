@@ -1,6 +1,6 @@
 """This is a handle to deal with the algorithm class to implement with Modular Problems."""
 
-__author__ = ["Iván Olarte Rodríguez"]
+__author__ = ["Iván Olarte Rodríguez", "Ivan Banny"]
 
 from typing import Union, Callable, List, Tuple, Dict, Optional
 from abc import ABC, abstractmethod
@@ -11,11 +11,61 @@ from math import inf
 from collections import defaultdict
 import numpy as np
 import torch
+from torch import Tensor
 
 import warnings
 from botorch.models.utils.assorted import InputDataWarning
 
 warnings.filterwarnings("ignore", category=InputDataWarning)
+
+
+class ProblemWrapper:
+    """A wrapper for optimization problems that handles different input types and shapes.
+
+    Accepts 1D or 2D NumPy arrays or PyTorch tensors and returns the same type as input.
+    """
+
+    def __init__(self, func: Union[RealSingleObjective, BBOB, Callable]):
+        """Initialize the problem wrapper with an objective function.
+
+        Args:
+            func (Union[RealSingleObjective, BBOB, Callable]): The objective function to be wrapped
+        """
+        self.func = func
+
+    def __call__(self, x: Union[np.ndarray, Tensor]) -> Union[np.ndarray, Tensor]:
+        """Call the wrapped problem with appropriate conversions.
+
+        Args:
+            x (Union[np.ndarray, Tensor]): Input points as NumPy array or PyTorch tensor
+                                           Can be 1D (single point) or 2D (`batch_shape x d`-dim)
+
+        Returns:
+            Function values in the same format as the input preserving output dimensions
+        """
+        # Determine the input type
+        is_torch = isinstance(x, Tensor)
+        is_single_point = x.ndim == 1
+
+        # Convert to numpy for processing
+        x_np = x.detach().cpu().numpy() if is_torch else x
+
+        if is_single_point:
+            result = self.func(x_np)
+            if not isinstance(result, np.ndarray):
+                result = np.array(result)
+        else:
+            results = []
+            for point in x_np:
+                point_result = self.func(point)
+                if not isinstance(point_result, np.ndarray):
+                    point_result = np.array(point_result)
+                results.append(point_result)
+            result = np.vstack(results)
+
+        if is_torch:
+            return torch.tensor(result).to(x)
+        return result
 
 
 class AbstractAlgorithm(ABC):
@@ -70,11 +120,11 @@ class AbstractAlgorithm(ABC):
                  bounds: Optional[np.ndarray],
                  **kwargs):
         """This is a default function indicating the structure of the '_call_' method in the context of an algorithm."""
-        if (isinstance(problem, BBOB) or isinstance(problem, RealSingleObjective) 
+        # Assign the problem
+        self.__problem = ProblemWrapper(problem)
+
+        if (isinstance(problem, BBOB) or isinstance(problem, RealSingleObjective)
                 or issubclass(type(problem), RealSingleObjective)):
-            
-            # Assign the problem
-            self.__problem = problem
             # Get the dimensionality from this
             self.dimension = problem.meta_data.n_variables
             self.maximization = (problem.meta_data.optimization_type == MAX)  # This is a placeholder to modify
@@ -82,9 +132,6 @@ class AbstractAlgorithm(ABC):
             # Pass the bounds from the IOH definition (the setter function will adapt the input)
             self.bounds = problem.bounds
         elif isinstance(problem, Callable):
-            # Assign the problem
-            self.__problem = problem
-
             # Set the dimension to be given by the parameters
             self.dimension = dim
             
@@ -151,6 +198,11 @@ class AbstractAlgorithm(ABC):
             self.__number_of_function_evaluations = new_eval
         else:
             raise ValueError("The number of function evaluations must be a positive integer")
+
+    @property
+    def problem(self) -> ProblemWrapper:
+        """Get the problem wrapper."""
+        return self.__problem
     
     @property
     def verbose(self) -> bool:

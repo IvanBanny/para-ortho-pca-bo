@@ -1,10 +1,11 @@
 from ..AbstractAlgorithm import AbstractAlgorithm
-from typing import Union, Optional, List
+from typing import Union, Optional
 from pyDOE import lhs
 import numpy as np
 from abc import abstractmethod
 
 
+# noinspection PyPep8Naming
 class LHS_sampler:
     """Latin Hypercube Sampling implementation."""
 
@@ -103,6 +104,7 @@ class LHS_sampler:
         self.__sample_zero = new_change
 
 
+# noinspection PyPep8Naming
 class AbstractBayesianOptimizer(AbstractAlgorithm):
     """Abstract base class for Bayesian optimization algorithms."""
 
@@ -125,7 +127,6 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
 
         full_parameters = self.__build_LHS_parameters(DoE_parameters)
 
-        # Check that there is some dictionary with the name "LHS_configuration"
         self.__lhs_sampler = LHS_sampler(
             criterion=full_parameters['criterion'],
             iterations=full_parameters['iterations'],
@@ -133,8 +134,8 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         )
 
         # Store all the evaluations (x,y)
-        self.__x_evals = []
-        self.__f_evals = []
+        self.__x_evals = None
+        self.__f_evals = np.empty((0, 1))
 
     def __str__(self):
         pass
@@ -143,6 +144,7 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         """Execute the optimization algorithm."""
         # Call the superclass
         super().__call__(problem, dim, bounds, **kwargs)
+        self.__x_evals = np.empty((0, self.dimension))
 
         if not isinstance(self.n_DoE, int) or self.n_DoE == 0:
             # Assign this equal to the dimension of the problem
@@ -156,11 +158,9 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
 
         # Rescale the initial points
         init_points = self._rescale_lhs_points(init_points)
-        # perform a loop with each point
-        for _, point in enumerate(init_points):
-            # append the new points
-            self.__x_evals.append(point)
-            self.__f_evals.append(problem(point))
+        # Evaluate points
+        self.__x_evals = np.concatenate([self.__x_evals, init_points])
+        self.__f_evals = np.concatenate([self.__f_evals, self.problem(init_points)])
 
         # Redefine the best
         self.assign_new_best()
@@ -197,20 +197,17 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
     def assign_new_best(self):
         """Assign the new best solution found so far."""
         if self.maximization:
-            self.current_best = max(self.__f_evals)
+            self.current_best_index = int(np.unravel_index(np.argmax(self.__f_evals), self.__f_evals.shape)[0])
         else:
-            self.current_best = min(self.__f_evals)
+            self.current_best_index = int(np.unravel_index(np.argmin(self.__f_evals), self.__f_evals.shape)[0])
 
-        # Assign the index
-        self.current_best_index = self.__f_evals.index(
-            self.current_best,  # Value
-            self.current_best_index  # Starting search position
-        )
+        self.current_best = self.__f_evals[self.current_best_index]
 
     def __repr__(self):
-        return super(AbstractAlgorithm, self).__repr__()
+        return super().__repr__()
 
-    def __build_LHS_parameters(self, params_dict: Union[dict, None]) -> dict:
+    @staticmethod
+    def __build_LHS_parameters(params_dict: Union[dict, None]) -> dict:
         """This function builds the LHS parameters to initialize the optimisation loop."""
         complete_params_dict = {
             "criterion": "center",
@@ -230,8 +227,8 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         super().reset()
 
         # Reset the evaluations
-        self.__x_evals = []
-        self.__f_evals = []
+        self.__x_evals = np.empty((0, self.dimension))
+        self.__f_evals = np.empty((0, 1))
 
     @property
     def budget(self) -> int:
@@ -260,11 +257,25 @@ class AbstractBayesianOptimizer(AbstractAlgorithm):
         return self.__lhs_sampler
 
     @property
-    def f_evals(self) -> List[float]:
+    def f_evals(self) -> np.ndarray:
         """Get the function evaluation values."""
         return self.__f_evals
 
+    @f_evals.setter
+    def f_evals(self, new_f_evals):
+        """Set new f evals."""
+        assert isinstance(new_f_evals, np.ndarray)
+        assert new_f_evals.ndim == 2
+        self.__f_evals = new_f_evals
+
     @property
-    def x_evals(self) -> List[np.ndarray]:
+    def x_evals(self) -> np.ndarray:
         """Get the evaluated points."""
         return self.__x_evals
+
+    @x_evals.setter
+    def x_evals(self, new_x_evals):
+        """Set new x evals."""
+        assert isinstance(new_x_evals, np.ndarray)
+        assert new_x_evals.ndim == 2
+        self.__x_evals = new_x_evals

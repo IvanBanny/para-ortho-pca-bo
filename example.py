@@ -33,10 +33,10 @@ config = ExperimentConfig(
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
     problem_id=19,
-    instance=1,
-    budget=20,
-    n_doe=5,
-    random_seed=47,
+    instance=0,
+    budget=30,
+    n_doe=15,
+    random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,
     var_threshold=0.95
@@ -44,7 +44,7 @@ config = ExperimentConfig(
 
 logger = Analyzer(
     triggers=[ALWAYS],
-    root=os.getcwd(),
+    root=os.path.join(os.getcwd(), "ioh-logs"),
     folder_name="test",
     algorithm_name=config.algorithm_variant,
     algorithm_info=f"A {config.algorithm_variant}-BO Implementation.",

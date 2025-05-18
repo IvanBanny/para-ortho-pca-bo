@@ -14,15 +14,16 @@ from gpytorch.kernels import MaternKernel
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition.analytic import (
-    LogExpectedImprovement,
+    ExpectedImprovement,
     ProbabilityOfImprovement,
     UpperConfidenceBound,
     AnalyticAcquisitionFunction
 )
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.fit import fit_gpytorch_mll
 
-from sklearn.decomposition import PCA
 from ioh.iohcpp.problem import RealSingleObjective
 
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
@@ -31,11 +32,10 @@ from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 from Algorithms.utils.vis_utils import PCABOVisualizer
 
 import warnings
-from sklearn.exceptions import ConvergenceWarning
-from botorch.exceptions.warnings import NumericsWarning
+from botorch.exceptions.warnings import NumericsWarning, OptimizationWarning
 
-warnings.filterwarnings("ignore", category=ConvergenceWarning)  # Filter warnings from sklearn PCA
 warnings.filterwarnings("ignore", category=NumericsWarning)  # Filter warnings from EI
+warnings.filterwarnings("ignore", category=OptimizationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Constants for acquisition function names
@@ -60,16 +60,9 @@ class PCA_BO(AbstractBayesianOptimizer):
     dimensionality by transforming the data to a lower-dimensional space
     where the optimization is performed, and then maps the solutions back to
     the original space.
-
-    Attributes:
-        n_components (int): Number of principal components to use.
-        pca (PCA): The PCA transformer object.
-        explained_variance_ratio (numpy.ndarray): Explained variance ratio of each component.
-        __torch_config (dict): Configuration for the PyTorch operations.
-        __parallel_optimizer (ParallelOptimizer): The parallel optimizer for multi-GPU processing.
     """
 
-    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf", "pca"]
+    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf"]
 
     def __init__(
             self,
@@ -78,7 +71,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             n_components: int = 0,
             var_threshold: float = 0.95,
             acquisition_function: str = "expected_improvement",
-            random_seed: int = 43,
+            random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
             visualize: bool = False,
             vis_output_dir: str = "./visualizations",
@@ -107,57 +100,49 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         self.random_seed = random_seed
 
-        if torch_config is None:
-            torch_config = {
-                "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-                "dtype": torch.float,
-                "BATCH_SIZE": 1,
-                "NUM_RESTARTS": 20,
-                "RAW_SAMPLES": 1024
-            }
-
-        # Set up the acquisition function
+        # Acquisition function attributes
         self.__acq_func_class = None
-        self.acquisition_function_name = acquisition_function
         self.__acq_func = None
         self.__pacqf = None
+        self.acquisition_function_name = acquisition_function
 
-        self.__torch_config = torch_config
+        self.__torch_config = {
+            "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+            "dtype": torch.float,
+            "BATCH_SIZE": 1,
+            "NUM_RESTARTS": 20,
+            "RAW_SAMPLES": 1024,
+            **(torch_config or {})
+        }
 
         # Set device and dtype from torch_config
         self.device = self.__torch_config["device"]
         self.dtype = self.__torch_config["dtype"]
 
-        if self.verbose:
-            print(f"Using device: {self.device}")
-
         # Ensure CUDA is available if device is CUDA
-        if self.device.type == 'cuda' and not torch.cuda.is_available():
+        if self.device.type == "cuda" and not torch.cuda.is_available():
             print("Warning: CUDA specified but not available. Falling back to CPU.")
             self.device = torch.device("cpu")
             self.__torch_config["device"] = self.device
 
-        # Initialize parallel optimizer for multi-GPU processing
-        self.__parallel_optimizer = None
+        if self.verbose:
+            print(f"\nUsing device: {self.device}")
 
         # Set PCA parameters
         self.n_components = n_components
         self.var_threshold = var_threshold
 
+        # PCA attributes
         self.data_mean = None
-        self.pca = None
         self.component_matrix = None
+        self.pca_mean = None
         self.explained_variance_ratio = None
-        self.reduced_space_dim_num = None
-
-        # Variables for storing the transformed data
-        self.__z_evals = []  # Transformed points in the reduced space
+        self.reduced_space_dim = None
+        self.__z_evals = torch.tensor(0, device=self.device, dtype=self.dtype)  # Points in the reduced space
 
         # Initialize visualizer if requested
         self.visualize = visualize
-        self.visualizer = None
-        if self.visualize:
-            self.visualizer = PCABOVisualizer(output_dir=vis_output_dir)
+        self.visualizer = PCABOVisualizer(output_dir=vis_output_dir) if self.visualize else None
 
         self.save_logs = save_logs
         self.log_dir = log_dir
@@ -182,6 +167,8 @@ class PCA_BO(AbstractBayesianOptimizer):
             bounds (Optional[np.ndarray], optional): Bounds for the decision variables. Defaults to None.
             **kwargs: Additional keyword arguments.
         """
+        # If used in the experiment setting - redirect stdout to the progress bar printing
+        original_stdout = None
         if self._pbar is not None:
             original_stdout = redirect_stdout_to_tqdm(self._pbar)
 
@@ -191,56 +178,45 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Call the superclass to run the initial sampling of the problem
         super().__call__(problem, dim, bounds, **kwargs)
 
+        # Update the progress bar with the doe points
         if self._pbar is not None:
             self._pbar.update(self.n_DoE)
 
         # Start the optimization loop
         while self.number_of_function_evaluations < self.budget:
-            # Initialize z_evals list with transformed points
+            # Initialize __z_evals with transformed points
             self._transform_points_to_reduced_space()
 
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
             new_z = self.optimize_acqf_and_get_observation()
+            evals = min(len(new_z), self.budget - self.number_of_function_evaluations)
+            new_z = new_z[: evals]
 
-            # Transform the points back to the original space and evaluate
-            for _, new_z_arr in enumerate(new_z):
-                if self.number_of_function_evaluations >= self.budget:
-                    break
+            new_x = self._transform_points_to_original_space(new_z)
 
-                # Convert tensor to numpy for processing
-                new_z_numpy = new_z_arr.cpu().detach().numpy().ravel()
+            bounds_torch = torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T
 
-                # Transform the point from reduced space to original space
-                new_x_numpy = self._transform_point_to_original_space(new_z_numpy)
+            outside_bounds = ~(new_x >= bounds_torch[0]).all(dim=1) | ~(new_x <= bounds_torch[1]).all(dim=1)
 
-                is_outside_bounds = (not np.all(new_x_numpy >= self.bounds[:, 0]) or
-                                     not np.all(new_x_numpy <= self.bounds[:, 1]))
-                # Ensure the point is within bounds
-                if is_outside_bounds:
-                    if self.verbose:
-                        print(f"Warning: PCA transformed point {new_x_numpy} was out of bounds")
-                    # new_x_numpy = np.clip(new_x_numpy, self.bounds[:, 0], self.bounds[:, 1])
+            if not (~outside_bounds).all().item() and self.verbose:
+                print(f"Warning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
 
-                # Append the new points to both spaces
-                self.x_evals.append(new_x_numpy)
-                self.__z_evals.append(new_z_numpy)
+            new_f_eval = self.problem(new_x)
 
-                new_f_eval = problem(new_x_numpy)
+            self.x_evals = np.concatenate([self.x_evals, new_x])
+            self.__z_evals = torch.cat([self.__z_evals, new_z])
+            self.f_evals = np.concatenate([self.f_evals, new_f_eval])
 
-                print(f"Sampled:\n"
-                      f"    x: {new_x_numpy.tolist()}\n"
-                      f"    y: {new_f_eval}")
+            print(f"\nSampled:\n"
+                  f"    x: {new_x}\n"
+                  f"    f: {new_f_eval}")
 
-                if self._pbar is not None:
-                    self._pbar.update(1)
+            if self._pbar is not None:
+                self._pbar.update(evals)
 
-                # Append the function evaluation
-                self.f_evals.append(new_f_eval)
-
-                # Increment the number of function evaluations
-                self.number_of_function_evaluations += 1
+            self.number_of_function_evaluations += evals
 
             # Assign the new best
             self.assign_new_best()
@@ -248,7 +224,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Print best to screen if verbose
             if self.verbose:
                 print(
-                    f"Evals: {self.number_of_function_evaluations}/{self.budget}",
+                    f"\nEvals: {self.number_of_function_evaluations}/{self.budget}",
                     f"Best:\n"
                     f"    x: {self.x_evals[self.current_best_index]}\n"
                     f"    y: {self.current_best}",
@@ -257,17 +233,17 @@ class PCA_BO(AbstractBayesianOptimizer):
 
             # Save logs
             if self.save_logs:
-                acqf_values_log, penalty_log, pei_values_log = self.pacqf.log_forward(
-                    torch.tensor(self.__z_evals).to(device=self.device, dtype=self.dtype).unsqueeze(1)
+                acqf_values_log, penalty_log, pei_values_log = self.__pacqf.log_forward(
+                    self.__z_evals.unsqueeze(1)
                 )
-                df = pd.DataFrame({
-                    "x": self.x_evals,
-                    "z": self.__z_evals,
-                    "p": self.f_evals,
-                    "acqf": acqf_values_log.detach().numpy(),
-                    "penalty": penalty_log.detach().numpy(),
-                    "pacqf": pei_values_log.detach().numpy(),
-                })
+                arrays = [
+                    self.x_evals, self.__z_evals.detach().numpy(), self.f_evals,
+                    acqf_values_log.detach().numpy(),
+                    penalty_log.detach().numpy(),
+                    pei_values_log.detach().numpy()
+                ]
+                names = ["x", "z", "p", "acqf", "penalty", "pacqf"]
+                df = pd.DataFrame({name: list(array) for name, array in zip(names, arrays)})
 
                 run_log_dir = os.path.join(
                     self.log_dir,
@@ -278,11 +254,13 @@ class PCA_BO(AbstractBayesianOptimizer):
 
             # Create visualizations
             if self.visualize and self.visualizer is not None:
-                self.visualizer.visualize_pcabo(torch.tensor(self.x_evals),
-                                                torch.tensor(self.x_evals[self.current_best_index]),
-                                                torch.tensor(self.bounds), torch.tensor(new_x_numpy).unsqueeze(0),
-                                                self.component_matrix, self.data_mean + self.pca.mean_, problem,
-                                                margin=0.1)
+                self.visualizer.visualize_pcabo(
+                    torch.tensor(self.x_evals, device=self.device, dtype=self.dtype),
+                    torch.tensor(self.x_evals[self.current_best_index], device=self.device, dtype=self.dtype),
+                    torch.tensor(self.bounds, device=self.device, dtype=self.dtype),
+                    new_x, self.component_matrix, self.reduced_space_dim, self.data_mean + self.pca_mean,
+                    problem, self.__pacqf, margin=0.1
+                )
 
         # Save the visualization gifs if it was enabled
         if self.visualize and self.visualizer is not None:
@@ -292,7 +270,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             )
 
         if self.verbose:
-            print("Optimization Process finalized!")
+            print("\nOptimization Process finalized!\n")
 
         # Restore initial randomness states
         self.restore_random_states()
@@ -304,24 +282,25 @@ class PCA_BO(AbstractBayesianOptimizer):
         """Assign the new best solution found so far."""
         super().assign_new_best()
 
-    def _calculate_weights(self) -> np.ndarray:
+    def _calculate_weights(self) -> Tensor:
         """Calculate rank-based weights for PCA transformation.
 
         This implements the rank-based weighting scheme described in the original PCA-BO paper,
         where better points (with lower function values for minimization) are assigned higher weights.
 
         Returns:
-            np.ndarray: Weights for each data point.
+            Tensor: Weights for each data point.
         """
         n = len(self.f_evals)
 
+        # Flatten the array to handle 2D case
+        f_vals = np.array(self.f_evals).flatten()
+
         # Get the ranking of points (1 = best, n = worst)
         if self.maximization:
-            # For maximization, higher values are better
-            ranks = np.argsort(np.argsort(-np.array(self.f_evals))) + 1
+            ranks = np.argsort(np.argsort(-f_vals)) + 1
         else:
-            # For minimization, lower values are better
-            ranks = np.argsort(np.argsort(np.array(self.f_evals))) + 1
+            ranks = np.argsort(np.argsort(f_vals)) + 1
 
         # Calculate pre-weights
         pre_weights = np.log(n) - np.log(ranks)
@@ -329,7 +308,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         # Normalize weights
         weights = pre_weights / pre_weights.sum()
 
-        return weights
+        return torch.from_numpy(weights).unsqueeze(1).to(device=self.device, dtype=self.dtype)
 
     def _transform_points_to_reduced_space(self) -> None:
         """Transform evaluated points to the reduced space using weighted PCA.
@@ -342,166 +321,124 @@ class PCA_BO(AbstractBayesianOptimizer):
         if len(self.x_evals) < 2:
             # Not enough points for PCA yet
             if len(self.x_evals) == 1:
-                self.__z_evals = [np.zeros(1)]
+                self.__z_evals = torch.zeros(1, 1)
             return
 
-        # Stack points into a matrix
-        X = np.vstack(self.x_evals)
+        x_torch = torch.tensor(self.x_evals, device=self.device, dtype=self.dtype)
+
+        # Center the data first
+        self.data_mean = x_torch.mean(dim=0)
+        x_centered = x_torch - self.data_mean
 
         # Calculate weights
         weights = self._calculate_weights()
 
-        # Center the data first
-        self.data_mean = np.mean(X, axis=0)
-        X_centered = X - self.data_mean
-
         # Apply the weights
         # Note: applying a square root here, which makes more sense, but isn't mentioned in the original paper
-        weighted_X = X_centered * np.sqrt(weights[:, np.newaxis])
+        x_weighted = x_centered * torch.sqrt(weights)
 
         # Add a small amount of noise to avoid numerical issues
-        noise = np.random.normal(0, 1e-8, size=weighted_X.shape)
-        weighted_X += noise
+        noise = torch.normal(0, 1e-8, size=x_weighted.shape)
+        x_weighted += noise
 
-        # Initialize and fit pca
-        self.pca = PCA()
+        # Center weighted
+        self.pca_mean = x_weighted.mean(dim=0)
+        x_weighted_centered = x_weighted - self.pca_mean
 
-        start_time = perf_counter()
-        self.pca.fit(weighted_X)
-        self.timing_logs["pca"].append(perf_counter() - start_time)
+        # Apply SVD
+        _, S, self.component_matrix = torch.linalg.svd(x_weighted_centered, full_matrices=False)
 
-        self.component_matrix = np.copy(self.pca.components_)
-        self.explained_variance_ratio = self.pca.explained_variance_ratio_
+        explained_variance = (S ** 2) / (x_weighted.shape[0] - 1)
+        self.explained_variance_ratio = explained_variance / torch.sum(explained_variance)
 
         n_components = self.n_components
         if n_components <= 0:
             # If using variance threshold - select components that explain enough variance
-            cumulative_var_ratio = np.cumsum(self.explained_variance_ratio)
-            n_components = np.sum(cumulative_var_ratio <= self.var_threshold) + 1
+            cumulative_var_ratio = torch.cumsum(self.explained_variance_ratio, dim=0)
+            n_components = torch.sum(cumulative_var_ratio <= self.var_threshold).item() + 1
             n_components = max(1, min(n_components, len(self.explained_variance_ratio)))
 
-        self.reduced_space_dim_num = n_components
-
-        # Clip the component matrix
-        self.pca.components_ = self.pca.components_[:self.reduced_space_dim_num]
+        self.reduced_space_dim = n_components
 
         if self.verbose:
             print(f"\nUsing {n_components} principal components with "
-                  f"{np.sum(self.pca.explained_variance_ratio_[:n_components]) * 100:.2f}% explained variance")
+                  f"{torch.sum(self.explained_variance_ratio[:n_components]) * 100:.2f}% explained variance")
 
         # Transform all points to the reduced space
         # We need to transform the centered, but unweighted data
-        Z = self.pca.transform(X_centered)
-        self.__z_evals = [Z[i, :] for i in range(Z.shape[0])]
+        self.__z_evals = (x_centered - self.pca_mean) @ self.component_matrix[: n_components].T
 
-    def _transform_point_to_original_space(self, z: np.ndarray) -> np.ndarray:
-        """Transform a point from reduced space back to the original space.
+    def _transform_points_to_original_space(self, z: torch.tensor) -> torch.tensor:
+        """Transform points from reduced space back to the original space.
 
         Args:
-            z (np.ndarray): Point in the reduced space.
+            z (torch.tensor): A `batch_shape x d`-dim Tensor of points in the reduced space.
 
         Returns:
-            np.ndarray: Corresponding point in the original space.
+            torch.tensor: A `batch_shape x r`-dim Tensor of corresponding point in the original space.
         """
         # Handle the case before PCA is fitted
-        if self.pca is None:
-            return np.random.uniform(self.bounds[:, 0], self.bounds[:, 1])
+        if self.component_matrix is None:
+            return (torch.rand(self.bounds.shape[0], device=self.device, dtype=self.dtype)
+                    * (self.bounds[:, 1] - self.bounds[:, 0]) + self.bounds[:, 0])
 
-        # Reshape to 2D for sklearn
-        z_2d = z.reshape(1, -1)
-
-        # Transform back to original space
-        x = self.pca.inverse_transform(z_2d) + self.data_mean
-
-        # # Add a small random perturbation to avoid getting stuck
-        # # This helps explore the space more effectively
-        # noise = np.random.normal(0, 0.01, size=x.shape)
-        # x = x + noise
-
-        return x.ravel()
+        return z @ self.component_matrix[: self.reduced_space_dim] + self.pca_mean + self.data_mean
 
     def _initialize_model(self, **kwargs):
-        """Initialize/fit the Gaussian Process Regression model in the reduced space.
+        """Initialize and fit the Gaussian Process Regression model in the reduced space.
 
         Args:
-            **kwargs: Additional keyword arguments.
+            **kwargs: Additional keyword arguments for upcoming development.
         """
-        if not self.__z_evals:
+        if not len(self.__z_evals):
             return
 
         # Get bounds for the reduced space
         if len(self.__z_evals) > 1:
-            z_array = np.vstack(self.__z_evals)
-            z_min = np.min(z_array, axis=0)
-            z_max = np.max(z_array, axis=0)
+            z_min = self.__z_evals.min(dim=0)[0]
+            z_max = self.__z_evals.max(dim=0)[0]
             z_range = z_max - z_min
-            # Add some padding
-            z_bounds = np.vstack([z_min - 0.1 * z_range, z_max + 0.1 * z_range]).T
+            z_bounds = torch.stack([z_min - 0.1 * z_range, z_max + 0.1 * z_range])
         else:
             # Default bounds if we have only one point
-            z_bounds = np.vstack([-np.ones(self.pca.n_components_),
-                                  np.ones(self.pca.n_components_)]).T
+            z_bounds = torch.stack([-torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype),
+                                    torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype)])
 
-        # Convert bounds array to Torch and move to device
-        bounds_torch = torch.from_numpy(z_bounds.transpose()).to(device=self.device, dtype=self.dtype)
+        train_obj = torch.from_numpy(self.f_evals).to(device=self.device, dtype=self.dtype)
 
-        # Convert the initial values to Torch Tensors and move to device
-        train_z = np.array(self.__z_evals).reshape((-1, len(self.__z_evals[0])))
-        train_z = torch.from_numpy(train_z).to(device=self.device, dtype=self.dtype)
-
-        train_obj = np.array(self.f_evals).reshape((-1, 1))
-        train_obj = torch.from_numpy(train_obj).to(device=self.device, dtype=self.dtype)
-
+        # Initialize and fit the GPR
         start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
-            train_z,
+            self.__z_evals,
             train_obj,
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
             outcome_transform=Standardize(m=1),
             input_transform=Normalize(
-                d=train_z.shape[-1],
-                bounds=bounds_torch
+                d=self.__z_evals.shape[-1],
+                bounds=z_bounds
             )
         )
+        mll = ExactMarginalLogLikelihood(self.__model_obj.likelihood, self.__model_obj)
+        fit_gpytorch_mll(mll)
         self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
 
     def optimize_acqf_and_get_observation(self) -> Tensor:
         """Optimize the acquisition function in the reduced space.
 
         Returns:
-            Tensor: New candidate point in the reduced space.
+            Tensor: `batch_shape x r`-dim Tensor - new candidate points in the reduced space.
         """
-        if not self.__z_evals:
+        if not len(self.__z_evals):
             # If no points in reduced space yet, return a random point
-            return torch.randn(1, 1, device=self.device, dtype=self.dtype)
-
-        # Define the function to transform points from reduced space to original space
-        def pca_transform_fn(z):
-            # Handle batched inputs
-            z_np = z.cpu().detach().numpy()
-
-            # Quick path for single points
-            if len(z_np.shape) == 1:
-                return torch.tensor([self._transform_point_to_original_space(z_np)],
-                                    device=self.device, dtype=self.dtype)
-
-            # Process each point individually
-            x_list = []
-            for i in range(z_np.shape[0]):
-                x_i = self._transform_point_to_original_space(z_np[i])
-                x_list.append(x_i)
-
-            # Stack results and convert back to tensor
-            x_batch = np.vstack(x_list)
-            return torch.tensor(x_batch, device=self.device, dtype=self.dtype)
+            return torch.randn(1, self.reduced_space_dim, device=self.device, dtype=self.dtype)
 
         # Create original bounds tensor
-        original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
+        original_bounds = torch.from_numpy(self.bounds).to(device=self.device, dtype=self.dtype)
 
         # Calculate z bounds
         r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
         z_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
-                    .expand(-1, self.reduced_space_dim_num))
+                    .expand(-1, self.reduced_space_dim))
 
         # Set up the acquisition function
         self.acquisition_function = self.acquisition_function_class(
@@ -511,24 +448,24 @@ class PCA_BO(AbstractBayesianOptimizer):
         )
 
         # Create the PEI acquisition function
-        self.pacqf = PenalizedAcqf(
+        self.__pacqf = PenalizedAcqf(
             acquisition_function=self.acquisition_function,
             model=self.__model_obj,
             best_f=self.current_best,
             original_bounds=original_bounds,
-            pca_transform_fn=pca_transform_fn,
-            penalty_factor=1000.0
+            pca_transform_fn=self._transform_points_to_original_space,
+            penalty_factor=10.0
         )
 
         # Optimize
         start_time = perf_counter()
         candidates, _ = optimize_acqf(
-            acq_function=self.pacqf,
+            acq_function=self.__pacqf,
             bounds=z_bounds,
             q=self.__torch_config['BATCH_SIZE'],
             num_restarts=self.__torch_config['NUM_RESTARTS'],
             raw_samples=self.__torch_config['RAW_SAMPLES'],
-            options={"batch_limit": 5, "maxiter": 500},
+            options={"batch_limit": 1, "maxiter": 500},
             return_best_only=True
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
@@ -541,9 +478,13 @@ class PCA_BO(AbstractBayesianOptimizer):
     def reset(self):
         """Reset the optimizer state."""
         super().reset()
-        self.__z_evals = []
-        self.pca = None
+
+        self.data_mean = None
+        self.component_matrix = None
+        self.pca_mean = None
         self.explained_variance_ratio = None
+        self.reduced_space_dim = None
+        self.__z_evals = torch.tensor(0, device=self.device, dtype=self.dtype)
 
     @property
     def torch_config(self) -> dict:
@@ -583,7 +524,7 @@ class PCA_BO(AbstractBayesianOptimizer):
     def set_acquisition_function_subclass(self) -> None:
         """Set the acquisition function subclass based on the name."""
         if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acq_func_class = LogExpectedImprovement
+            self.__acq_func_class = ExpectedImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
             self.__acq_func_class = ProbabilityOfImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:

@@ -67,6 +67,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # Reshape input for processing
         X_flat = X.view(-1, X.shape[-1])
 
+        # print(X_flat)
+
         # Map points to original space using the provided transformation function
         X_orig = self.pca_transform_fn(X_flat)
 
@@ -75,6 +77,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         upper_bounds = self.original_bounds[:, 1]
 
         # Check if points are outside bounds
+        # print(lower_bounds)
+        # print(X_orig)
         outside_lower = torch.clamp(lower_bounds - X_orig, min=0)
         outside_upper = torch.clamp(X_orig - upper_bounds, min=0)
 
@@ -120,7 +124,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         is_feasible = (penalty == 0)
 
         # Where feasible, use EI; where infeasible, use penalty
-        pei_values = torch.where(is_feasible, acqf_values, penalty)
+        pei_values = torch.where(is_feasible, acqf_values, penalty)  # penalty
 
         return pei_values
 
