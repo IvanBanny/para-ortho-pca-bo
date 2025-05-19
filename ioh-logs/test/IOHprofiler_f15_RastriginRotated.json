@@ -10,7 +10,7 @@
 		{"dimension": 2,
 		"path": "data_f15_RastriginRotated/IOHprofiler_f15_DIM2.dat",
 		"runs": [
-			{"instance": 0, "evals": 20022, "best": {"evals": 6541, "y": 1.1094083261647933, "x": [1.5656566619873047, -3.080808162689209]}}
+			{"instance": 0, "evals": 270100, "best": {"evals": 6056, "y": 1.5985525460289232, "x": [1.2727270126342773, -2.1212120056152344]}}
 		]}
 	]
 }

@@ -33,6 +33,13 @@ class ProblemWrapper:
         """
         self.func = func
 
+        if (hasattr(func, "meta_data") and hasattr(func.meta_data, "optimization_type")
+                and hasattr(func.meta_data.optimization_type, "value")):
+            self.maximization = bool(func.meta_data.optimization_type.value)
+
+        if hasattr(func, "optimum") and hasattr(func.optimum, "x") and hasattr(func.optimum, "y"):
+            self.solution_x, self.solution_y = func.optimum.x, func.optimum.y
+
     def __call__(self, x: Union[np.ndarray, Tensor]) -> Union[np.ndarray, Tensor]:
         """Call the wrapped problem with appropriate conversions.
 

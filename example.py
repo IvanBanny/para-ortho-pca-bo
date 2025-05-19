@@ -21,6 +21,7 @@ class ExperimentConfig:
     instance: int
     budget: int
     n_doe: int
+    ortho_samples: int
     random_seed: int
     doe_params: dict
     var_threshold: float
@@ -32,10 +33,11 @@ config = ExperimentConfig(
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
-    problem_id=19,
+    problem_id=20,
     instance=0,
-    budget=30,
+    budget=17,
     n_doe=15,
+    ortho_samples=2,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,
@@ -68,6 +70,7 @@ else:
         n_DoE=config.n_doe,
         n_components=config.n_components,
         var_threshold=config.var_threshold,
+        ortho_samples=config.ortho_samples,
         acquisition_function=config.acquisition_function,
         random_seed=config.random_seed,
         maximization=False,
@@ -83,6 +86,8 @@ problem = get_problem(
     dimension=config.dimensions
 )
 problem.attach_logger(logger)
+
+print(f"\nRunning problem {config.problem_id} instance {config.instance} seed {config.random_seed}:\n")
 
 optimizer(problem=problem)
 

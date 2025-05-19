@@ -23,6 +23,7 @@ class ExperimentConfig:
     instance: int
     budget: int
     n_doe: int
+    ortho_samples: int
     random_seed: int
     doe_params: dict
     var_threshold: float
@@ -60,6 +61,7 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
             n_DoE=config.n_doe,
             n_components=config.n_components,
             var_threshold=config.var_threshold,
+            ortho_samples=2,
             acquisition_function=config.acquisition_function,
             random_seed=process_seed,
             maximization=False,
@@ -92,8 +94,9 @@ config = ExperimentConfig(
     dimensions=2,
     problem_ids=list(range(15, 25)),
     instance=0,
-    budget=50,
+    budget=100,
     n_doe=20,
+    ortho_samples=2,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,

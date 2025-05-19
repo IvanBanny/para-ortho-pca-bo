@@ -1,6 +1,7 @@
 """A standard PCA-BO implementation."""
 
 import os
+from math import ceil
 from typing import Union, Callable, Optional, Dict, Any
 from time import perf_counter
 
@@ -11,7 +12,10 @@ from torch import Tensor
 
 from gpytorch.kernels import MaternKernel
 
+from botorch.models.transforms.outcome import Standardize
 from botorch.models import SingleTaskGP
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.fit import fit_gpytorch_mll
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition.analytic import (
     ExpectedImprovement,
@@ -20,9 +24,7 @@ from botorch.acquisition.analytic import (
     AnalyticAcquisitionFunction
 )
 from botorch.optim import optimize_acqf
-from botorch.models.transforms.outcome import Standardize
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.fit import fit_gpytorch_mll
+from botorch.optim.initializers import sample_q_batches_from_polytope
 
 from ioh.iohcpp.problem import RealSingleObjective
 
@@ -70,6 +72,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             n_DoE: int = 0,
             n_components: int = 0,
             var_threshold: float = 0.95,
+            ortho_samples: int = 0,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -85,8 +88,10 @@ class PCA_BO(AbstractBayesianOptimizer):
             budget (int): Maximum number of function evaluations.
             n_DoE (int, optional): Number of initial design of experiments samples. Defaults to 0.
             n_components (int, optional): Number of principal components to use. If 0, determined
-                                        by var_threshold. Defaults to 0.
+                                          by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
+            ortho_samples (int, optional): Number or additional samples in the orthogonal per iteration.
+                                           If 0, only samples the original candidate. Defaults to 0.
             random_seed (int, optional): Random seed for reproducibility. Defaults to 43.
             torch_config (Dict[str, Any], optional): gpu configuration.
             visualize (bool, optional): Whether to visualize the acquisition function. Defaults to False.
@@ -99,6 +104,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         super().__init__(budget, n_DoE, **kwargs)
 
         self.random_seed = random_seed
+        self.ortho_samples = ortho_samples
 
         # Acquisition function attributes
         self.__acq_func_class = None
@@ -191,10 +197,21 @@ class PCA_BO(AbstractBayesianOptimizer):
             self._initialize_model(**kwargs)
 
             new_z = self.optimize_acqf_and_get_observation()
-            evals = min(len(new_z), self.budget - self.number_of_function_evaluations)
+            evals = min(
+                len(new_z),
+                ceil((self.budget - self.number_of_function_evaluations) / (self.ortho_samples + 1))
+            )
             new_z = new_z[: evals]
 
             new_x = self._transform_points_to_original_space(new_z)
+
+            if self.ortho_samples:
+                quxt = perf_counter()
+                new_x = self.get_orthogonal_samples(new_x)
+                evals = min(len(new_x), self.budget - self.number_of_function_evaluations)
+                new_x = new_x[: evals]
+                new_z = new_z.repeat_interleave(self.ortho_samples + 1, dim=0)[: evals]
+                print(f"quxt: {perf_counter() - quxt}")
 
             bounds_torch = torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T
 
@@ -256,10 +273,11 @@ class PCA_BO(AbstractBayesianOptimizer):
             if self.visualize and self.visualizer is not None:
                 self.visualizer.visualize_pcabo(
                     torch.tensor(self.x_evals, device=self.device, dtype=self.dtype),
+                    torch.tensor(self.f_evals, device=self.device, dtype=self.dtype),
                     torch.tensor(self.x_evals[self.current_best_index], device=self.device, dtype=self.dtype),
                     torch.tensor(self.bounds, device=self.device, dtype=self.dtype),
                     new_x, self.component_matrix, self.reduced_space_dim, self.data_mean + self.pca_mean,
-                    problem, self.__pacqf, margin=0.1
+                    self.problem, self.__pacqf, margin=0.1
                 )
 
         # Save the visualization gifs if it was enabled
@@ -457,6 +475,36 @@ class PCA_BO(AbstractBayesianOptimizer):
             penalty_factor=10.0
         )
 
+        # # Calculate all the 2*d inequality constraints List[Tuple[Tensor, Tensor, float]]
+        # inequality_constraints = []
+        # lbm = original_bounds[:, 0] - self.pca_mean - self.data_mean
+        # ubm = original_bounds[:, 1] - self.pca_mean - self.data_mean
+        # for i in range(self.dimension):
+        #     inequality_constraints.append((
+        #         torch.arange(self.reduced_space_dim),
+        #         self.component_matrix[: self.reduced_space_dim, i],
+        #         float(lbm[i])
+        #     ))
+        #     inequality_constraints.append((
+        #         torch.arange(self.reduced_space_dim),
+        #         -self.component_matrix[: self.reduced_space_dim, i],
+        #         float(-ubm[i])
+        #     ))
+        #
+        # foot = perf_counter()
+        #
+        # batch_initial_conditions = sample_q_batches_from_polytope(
+        #     n=self.__torch_config['RAW_SAMPLES']//10,
+        #     q=self.__torch_config['BATCH_SIZE'],
+        #     bounds=z_bounds,
+        #     n_burnin=200,
+        #     n_thinning=10,
+        #     seed=self.random_seed,
+        #     inequality_constraints=inequality_constraints,
+        # )
+        #
+        # print(f"foot: {perf_counter() - foot}")
+
         # Optimize
         start_time = perf_counter()
         candidates, _ = optimize_acqf(
@@ -465,12 +513,70 @@ class PCA_BO(AbstractBayesianOptimizer):
             q=self.__torch_config['BATCH_SIZE'],
             num_restarts=self.__torch_config['NUM_RESTARTS'],
             raw_samples=self.__torch_config['RAW_SAMPLES'],
+            # batch_initial_conditions=batch_initial_conditions,
+            # inequality_constraints=inequality_constraints,
             options={"batch_limit": 1, "maxiter": 500},
             return_best_only=True
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
         return candidates
+
+    def get_orthogonal_samples(self, x: Tensor):
+        """Get samples in the PCA's orthogonal dimension to the provided candidate.
+
+        Args:
+            x: `q x d`-dim Tensor
+
+        Returns:
+            A `(ortho_samples + 1) * q x d` Tensor with new candidates.
+        """
+        # Create original bounds tensor
+        original_bounds = torch.from_numpy(self.bounds).to(device=self.device, dtype=self.dtype)
+
+        # Calculate ortho bounds
+        r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
+        ortho_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
+                        .expand(-1, self.dimension - self.reduced_space_dim))
+
+        new_x = torch.empty(0)
+
+        for candidate in x:
+            # Calculate all the 2*d inequality constraints List[Tuple[Tensor, Tensor, float]]
+            inequality_constraints = []
+            lbc = original_bounds[:, 0] - candidate
+            ubc = original_bounds[:, 1] - candidate
+            for i in range(self.dimension):
+                inequality_constraints.append((
+                    torch.arange(self.dimension - self.reduced_space_dim),
+                    self.component_matrix[self.reduced_space_dim:, i],
+                    float(lbc[i])
+                ))
+                inequality_constraints.append((
+                    torch.arange(self.dimension - self.reduced_space_dim),
+                    -self.component_matrix[self.reduced_space_dim:, i],
+                    float(-ubc[i])
+                ))
+
+            ortho_lin_comb = sample_q_batches_from_polytope(
+                n=self.ortho_samples*4,
+                q=1,
+                bounds=ortho_bounds,
+                n_burnin=max(100, 10 * (self.dimension - self.reduced_space_dim)),
+                n_thinning=max(4, (self.dimension - self.reduced_space_dim) // 3),
+                inequality_constraints=inequality_constraints,
+            ).squeeze(1)
+
+            ortho_part = ortho_lin_comb @ self.component_matrix[self.reduced_space_dim:]
+
+            # Select self.ortho_samples weighted by the proximity to center
+            weights = torch.exp(-torch.norm(ortho_part, dim=1) ** 2 / (2 * 0.2**2))
+            ortho_part = ortho_part[torch.multinomial(weights, self.ortho_samples, replacement=False)]
+
+            new_x = torch.cat([new_x, candidate.unsqueeze(0),
+                               candidate + ortho_part])
+
+        return new_x
 
     def __repr__(self):
         return super().__repr__()

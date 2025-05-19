@@ -10,7 +10,7 @@
 		{"dimension": 2,
 		"path": "data_f24_LunacekBiRastrigin/IOHprofiler_f24_DIM2.dat",
 		"runs": [
-			{"instance": 0, "evals": 300050, "best": {"evals": 3482, "y": 0.6617829013040843, "x": [-1.5656566619873047, 1.0606062412261963]}}
+			{"instance": 0, "evals": 270100, "best": {"evals": 4287, "y": 1.722973747602767, "x": [-0.9090909957885742, 1.6363635063171387]}}
 		]}
 	]
 }

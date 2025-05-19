@@ -1,0 +1,16 @@
+{
+	"version": "0.3.18", 
+	"suite": "unknown_suite", 
+	"function_id": 21, 
+	"function_name": "Gallagher101", 
+	"maximization": false, 
+	"algorithm": {"name": "pca", "info": "A pca-BO Implementation."},
+	"attributes": ["evaluations", "raw_y", "raw_y_best"],
+	"scenarios": [
+		{"dimension": 2,
+		"path": "data_f21_Gallagher101/IOHprofiler_f21_DIM2.dat",
+		"runs": [
+			{"instance": 0, "evals": 270100, "best": {"evals": 2094, "y": 8.279387863609951e-07, "x": [-3.5757575035095215, 2.4848484992980957]}}
+		]}
+	]
+}
