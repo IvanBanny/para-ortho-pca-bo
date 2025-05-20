@@ -21,6 +21,7 @@ class ExperimentConfig:
     instance: int
     budget: int
     n_doe: int
+    q: int
     ortho_samples: int
     random_seed: int
     doe_params: dict
@@ -29,14 +30,15 @@ class ExperimentConfig:
 
 
 config = ExperimentConfig(
-    algorithm_variant="pca",  # vanilla / pca
+    algorithm_variant="pcabo",  # vanilla / pcabo
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
     problem_id=20,
     instance=0,
-    budget=17,
+    budget=25,
     n_doe=15,
+    q=1,
     ortho_samples=2,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
@@ -54,20 +56,24 @@ logger = Analyzer(
     store_positions=True
 )
 
-if config.algorithm_variant == 'vanilla':
+if config.algorithm_variant == "vanilla":
     optimizer = Vanilla_BO(
         budget=config.budget,
         n_DoE=config.n_doe,
+        q=1,
         acquisition_function=config.acquisition_function,
         random_seed=config.random_seed,
         maximization=False,
         verbose=True,
+        visualize=True,
+        vis_output_dir="./test",
         DoE_parameters=config.doe_params
     )
 else:
     optimizer = PCA_BO(
         budget=config.budget,
         n_DoE=config.n_doe,
+        q=1,
         n_components=config.n_components,
         var_threshold=config.var_threshold,
         ortho_samples=config.ortho_samples,
@@ -76,6 +82,7 @@ else:
         maximization=False,
         verbose=True,
         visualize=True,
+        vis_output_dir="./test",
         save_logs=True,
         DoE_parameters=config.doe_params
     )

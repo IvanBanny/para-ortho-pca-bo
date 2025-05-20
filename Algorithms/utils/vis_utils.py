@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.collections import LineCollection
-from matplotlib.colors import Normalize, LogNorm
+from matplotlib.colors import LogNorm
 import os
 from collections import defaultdict
 from typing import Optional, Tuple, Any
@@ -17,6 +17,8 @@ class PCABOVisualizer:
     Primarily designed for a 2d problem with 1pc case.
     """
 
+    VALID_MODES = ["bo", "pcabo"]
+
     def __init__(self, output_dir: str = "./visualizations"):
         """Initialize the PCABOVisualizer.
 
@@ -30,27 +32,29 @@ class PCABOVisualizer:
         # List to store plot images
         self.images: defaultdict = defaultdict(list)
 
-    def visualize_pcabo(
-        self,
-        x: torch.Tensor,
-        f: torch.Tensor,
-        best: torch.Tensor,
-        b: torch.Tensor,
-        c: torch.Tensor,
-        component_matrix: torch.Tensor,
-        n_components: int,
-        mu: torch.Tensor,
-        p: Any,
-        acqf: Any,
-        fig_size: Tuple[int, int] = (16, 10),
-        dpi: int = 100,
-        font_size: int = 22,
-        n_points: int = 100,
-        margin: float = 0.2,
+    def visualize(
+            self,
+            mode: str,
+            x: torch.Tensor,
+            f: torch.Tensor,
+            best: torch.Tensor,
+            b: torch.Tensor,
+            c: torch.Tensor,
+            p: Any,
+            acqf: Any,
+            component_matrix: Optional[torch.Tensor] = None,
+            n_components: Optional[int] = None,
+            mu: Optional[torch.Tensor] = None,
+            fig_size: Optional[Tuple[int, int]] = None,
+            dpi: int = 100,
+            font_size: int = 22,
+            n_points: int = 100,
+            margin: float = 0.2,
     ) -> None:
         """Visualize 2d landscape with sampled points and PCs.
 
         Args:
+            mode (str): Visualization mode, either "bo" or "pcabo"
             x (torch.Tensor): Sampled points
             f (torch.Tensor): Sampled point values
             best (torch.Tensor): Best solution so far
@@ -67,6 +71,20 @@ class PCABOVisualizer:
             n_points (int): Number of points in each dimension for contour plot grid
             margin (float): Margin to add around the data (as a fraction of data range)
         """
+        if mode not in self.VALID_MODES:
+            raise ValueError(f"Invalid mode: {mode}. Must be one of {self.VALID_MODES}")
+
+        if mode == "bo":
+            fig_size = (14, 10) if fig_size is None else fig_size
+        elif mode == "pcabo":
+            if component_matrix is None:
+                raise ValueError("component_matrix must be provided for pcabo mode")
+            if n_components is None:
+                raise ValueError("n_components must be provided for pcabo mode")
+            if mu is None:
+                raise ValueError("mu must be provided for pcabo mode")
+            fig_size = (16, 10) if fig_size is None else fig_size
+
         fig, ax = plt.subplots(1, 1, figsize=fig_size, dpi=dpi)
 
         # Calculate landscape points
@@ -93,59 +111,61 @@ class PCABOVisualizer:
             torch.reshape(vis_p_log, (n_points, n_points)).T,
             interpolation="spline16",
             origin="lower",
-            extent=[min_vis[0], max_vis[0], min_vis[1], max_vis[1]],
+            extent=(min_vis[0].item(), max_vis[0].item(), min_vis[1].item(), max_vis[1].item()),
             aspect=(max_vis[0] - min_vis[0]) / (max_vis[1] - min_vis[1]),
             cmap="plasma",
             alpha=0.5,
             zorder=1
         )
 
-        # Plot PCs
-        line_margin = 0.1
-        pc1_x = torch.linspace(
-            max(min_vis[0] - line_margin,
-                (min_vis[1] - mu[1]) * component_matrix[0][0] / component_matrix[0][1] + mu[0]),
-            min(max_vis[0] + line_margin,
-                (max_vis[1] - mu[1]) * component_matrix[0][0] / component_matrix[0][1] + mu[0]),
-            500
-        )
-        pc2_x = torch.linspace(
-            max(min_vis[0] - line_margin,
-                (min_vis[1] - mu[1]) * component_matrix[1][0] / component_matrix[1][1] + mu[0]),
-            min(max_vis[0] + line_margin,
-                (max_vis[1] - mu[1]) * component_matrix[1][0] / component_matrix[1][1] + mu[0]),
-            2
-        )
-        pc3_x = torch.linspace(
-            max(min_vis[0] - line_margin,
-                (min_vis[1] - c[0, 1]) * component_matrix[1][0] / component_matrix[1][1] + c[0, 0]),
-            min(max_vis[0] + line_margin,
-                (max_vis[1] - c[0, 1]) * component_matrix[1][0] / component_matrix[1][1] + c[0, 0]),
-            2
-        )
+        if mode == "pcabo":
+            # Plot PCs
+            line_margin = 0.1
+            pc1_x = torch.linspace(
+                max(min_vis[0].item() - line_margin,
+                    (min_vis[1] - mu[1]) * component_matrix[0][0] / component_matrix[0][1] + mu[0]),
+                min(max_vis[0].item() + line_margin,
+                    (max_vis[1] - mu[1]) * component_matrix[0][0] / component_matrix[0][1] + mu[0]),
+                500
+            )
+            pc2_x = torch.linspace(
+                max(min_vis[0].item() - line_margin,
+                    (min_vis[1] - mu[1]) * component_matrix[1][0] / component_matrix[1][1] + mu[0]),
+                min(max_vis[0].item() + line_margin,
+                    (max_vis[1] - mu[1]) * component_matrix[1][0] / component_matrix[1][1] + mu[0]),
+                2
+            )
+            pc3_x = torch.linspace(
+                max(min_vis[0].item() - line_margin,
+                    (min_vis[1] - c[0, 1]) * component_matrix[1][0] / component_matrix[1][1] + c[0, 0]),
+                min(max_vis[0].item() + line_margin,
+                    (max_vis[1] - c[0, 1]) * component_matrix[1][0] / component_matrix[1][1] + c[0, 0]),
+                2
+            )
 
-        pc1_y = (component_matrix[0][1] / component_matrix[0][0]) * (pc1_x - mu[0]) + mu[1]
-        pc2_y = (component_matrix[1][1] / component_matrix[1][0]) * (pc2_x - mu[0]) + mu[1]
-        pc3_y = (component_matrix[1][1] / component_matrix[1][0]) * (pc3_x - c[0, 0]) + c[0, 1]
+            pc1_y = (component_matrix[0][1] / component_matrix[0][0]) * (pc1_x - mu[0]) + mu[1]
+            pc2_y = (component_matrix[1][1] / component_matrix[1][0]) * (pc2_x - mu[0]) + mu[1]
+            pc3_y = (component_matrix[1][1] / component_matrix[1][0]) * (pc3_x - c[0, 0]) + c[0, 1]
 
-        pc1_p = torch.stack([pc1_x, pc1_y]).T.reshape(-1, 1, 2)
-        pc1_segments = torch.cat([pc1_p[: -1], pc1_p[1:]], 1)
+            pc1_p = torch.stack([pc1_x, pc1_y]).T.reshape(-1, 1, 2)
+            pc1_segments = torch.cat([pc1_p[: -1], pc1_p[1:]], 1)
 
-        pc1_p_r = (pc1_p.reshape(-1, 2) - mu) @ component_matrix[: n_components].T
-        pc1_acqf_original = acqf(pc1_p_r.unsqueeze(1))
-        pc1_acqf = pc1_acqf_original + 1.0 - pc1_acqf_original.min()
+            pc1_p_r = (pc1_p.reshape(-1, 2) - mu) @ component_matrix[: n_components].T
+            pc1_acqf_original = acqf(pc1_p_r.unsqueeze(1))
+            pc1_acqf = pc1_acqf_original + 1.0 - pc1_acqf_original.min()
 
-        pc1_norm = LogNorm(vmin=pc1_acqf.min().item() - 1e-5, vmax=pc1_acqf.max().item())
-        pc1_lc = LineCollection(pc1_segments, cmap="viridis", norm=pc1_norm, zorder=2)
-        pc1_lc.set_array(pc1_acqf.detach().numpy())
-        pc1_lc.set_linewidth(2)
-        ax.add_collection(pc1_lc)
+            pc1_norm = LogNorm(vmin=pc1_acqf.min().item() - 1e-5, vmax=pc1_acqf.max().item())
+            pc1_lc = LineCollection(pc1_segments, cmap="viridis", norm=pc1_norm, zorder=2)
+            pc1_lc.set_array(pc1_acqf.detach().numpy())
+            pc1_lc.set_linewidth(2)
+            ax.add_collection(pc1_lc)
 
-        plt.plot(pc2_x, pc2_y, color="green", alpha=0.4, zorder=2)
-        plt.plot(pc3_x, pc3_y, color="green", alpha=0.2, zorder=2)
+            plt.plot(pc2_x, pc2_y, color="green", alpha=0.4, zorder=2)
+            plt.plot(pc3_x, pc3_y, color="green", alpha=0.2, zorder=2)
 
         # Plot bounds
-        ax.add_patch(patches.Rectangle(b[:2, 0], b[0, 1] - b[0, 0], b[1, 1] - b[1, 0],
+        ax.add_patch(patches.Rectangle((float(b[0, 0].item()), float(b[1, 0].item())),
+                                       float(b[0, 1] - b[0, 0]), float(b[1, 1] - b[1, 0]),
                                        linewidth=2, edgecolor='r', facecolor="none", zorder=3))
 
         # Plot observed points with a viridis colormap based on value
@@ -170,36 +190,39 @@ class PCABOVisualizer:
 
         # Generate ticks for observed scatter (which uses -(f - f.min() + 1.0).log())
         n_ticks = 5
-        displayed_min = -(f - f.min() + 1.0).log().min().item()
-        displayed_max = -(f - f.min() + 1.0).log().max().item()
+        minimization = (1 if hasattr(p, "maximization") and p.maximization else -1)
+        displayed_min = minimization * (f - f.min() + 1.0).log().min().item()
+        displayed_max = minimization * (f - f.min() + 1.0).log().max().item()
         tick_values = torch.linspace(displayed_min, displayed_max, n_ticks).tolist()
-        # Map back to original f values: if displayed = -(f - f.min() + 1.0).log(), then f = exp(-displayed) + f.min() - 1.0
+        # Map back to original f values: if displayed = -(f - f.min() + 1.0).log(),
+        # then f = exp(-displayed) + f.min() - 1.0
         f_min = f.min().item()
         tick_labels = [f"{torch.exp(-torch.tensor(val)).item() + f_min - 1.0:.1f}" for val in tick_values]
         cbar3.set_ticks(tick_values)
         cbar3.set_ticklabels(tick_labels)
 
-        # Colorbar for PC line collection (shows original acqf values)
-        cbar2 = fig.colorbar(pc1_lc, ax=ax, fraction=0.05, pad=0.11, shrink=0.85)
-        cbar2.set_label("Pacqf values", fontsize=font_size)
-        cbar2.ax.yaxis.set_label_position("left")
-        cbar2.ax.tick_params(labelsize=font_size * 0.64)
+        if mode == "pcabo":
+            # Colorbar for PC line collection (shows original acqf values)
+            cbar2 = fig.colorbar(pc1_lc, ax=ax, fraction=0.05, pad=0.11, shrink=0.85)
+            cbar2.set_label("Pacqf values", fontsize=font_size)
+            cbar2.ax.yaxis.set_label_position("left")
+            cbar2.ax.tick_params(labelsize=font_size * 0.64)
 
-        # Generate ticks for PC line collection (log-normalized)
-        n_ticks = 5
-        pc1_shifted_min = pc1_acqf.min().item()
-        pc1_shifted_max = pc1_acqf.max().item()
-        tick_values = torch.logspace(
-            torch.log10(torch.tensor(pc1_shifted_min)).item(),
-            torch.log10(torch.tensor(pc1_shifted_max)).item(),
-            n_ticks
-        ).tolist()
-        # Map back to original acqf values
-        pc1_original_min = pc1_acqf_original.min().item()
-        shift_amount = 1.0 - pc1_original_min
-        tick_labels = [f"{val - shift_amount:.3f}" for val in tick_values]
-        cbar2.set_ticks(tick_values)
-        cbar2.set_ticklabels(tick_labels)
+            # Generate ticks for PC line collection (log-normalized)
+            n_ticks = 5
+            pc1_shifted_min = pc1_acqf.min().item()
+            pc1_shifted_max = pc1_acqf.max().item()
+            tick_values = torch.logspace(
+                torch.log10(torch.tensor(pc1_shifted_min)).item(),
+                torch.log10(torch.tensor(pc1_shifted_max)).item(),
+                n_ticks
+            ).tolist()
+            # Map back to original acqf values
+            pc1_original_min = pc1_acqf_original.min().item()
+            shift_amount = 1.0 - pc1_original_min
+            tick_labels = [f"{val - shift_amount:.3f}" for val in tick_values]
+            cbar2.set_ticks(tick_values)
+            cbar2.set_ticklabels(tick_labels)
 
         # Landscape colorbar (shows original problem values)
         cbar1 = fig.colorbar(im, ax=ax, fraction=0.05, pad=0.08, shrink=0.85)
@@ -222,7 +245,7 @@ class PCABOVisualizer:
         ax.legend(fontsize=font_size, markerscale=1.0)
         # ax.set_xlabel("X0")
         # ax.set_ylabel("X1")
-        # ax.set_title("PCABO")
+        # ax.set_title(mode)
 
         plt.tight_layout()
 
@@ -231,7 +254,7 @@ class PCABOVisualizer:
         buf.seek(0)
 
         img = Image.open(buf)
-        self.images["pcabo"].append(img)
+        self.images[mode].append(img)
 
         plt.close(fig)
 
@@ -258,22 +281,22 @@ class PCABOVisualizer:
         """Clear all stored images."""
         self.images = defaultdict(list)
 
-    def get_frame(self, m: str, index: int) -> Image.Image:
+    def get_frame(self, mode: str, index: int) -> Image.Image:
         """Get a frame by index.
 
         Args:
-            m (str): visualization codename: "pcabo" or "acqf"
+            mode (str): Visualization mode, either "bo" or "pcabo"
             index (int): Frame index
         """
-        if index < 0 or index >= len(self.images[m]):
+        if index < 0 or index >= len(self.images[mode]):
             raise IndexError(f"Index {index} out of range (0-{len(self.images[m]) - 1})")
 
-        return self.images[m][index]
+        return self.images[mode][index]
 
-    def __len__(self, m: str) -> int:
+    def __len__(self, mode: str) -> int:
         """Get the number of saved frames.
 
         Args:
-            m (str): visualization codename: "pcabo" or "acqf"
+            mode (str): Visualization mode, either "bo" or "pcabo"
         """
-        return len(self.images[m])
+        return len(self.images[mode])

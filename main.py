@@ -122,9 +122,15 @@ def main():
         torch_config={
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
             "dtype": torch.float,
-            "BATCH_SIZE": 1,
             "NUM_RESTARTS": 20,
-            "RAW_SAMPLES": 1024
+            "RAW_SAMPLES": 1024,
+            "OPTIMIZE_ACQF_OPTIONS": {
+                "batch_limit": 10,
+                "maxiter": 300,
+                "method": "L-BFGS-B",
+                "ftol": 1e-8,
+                "sequential": True
+            }
         },
         verbose=args.verbose
     )

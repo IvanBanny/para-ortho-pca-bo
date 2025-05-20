@@ -67,7 +67,13 @@ def main(budget=200, doe_num=30, dim=6, fid=19, instance=0, seed=69, if_gpu=True
                 q=1,
                 num_restarts=20,
                 raw_samples=1024,
-                options={"maxiter": 500}
+                options={
+                    "batch_limit": 10,
+                    "maxiter": 300,
+                    "method": "L-BFGS-B",
+                    "ftol": 1e-8,
+                    "sequential": True
+                }
             )
         else:
             batch_initial_conditions = gen_batch_initial_conditions(
@@ -83,7 +89,7 @@ def main(budget=200, doe_num=30, dim=6, fid=19, instance=0, seed=69, if_gpu=True
                 lower_bounds=bounds[0],
                 upper_bounds=bounds[1],
                 optimizer=torch.optim.Adam,
-                options={"maxiter": 500},
+                options={"maxiter": 300},
             )
             candidates = get_best_candidates(
                 batch_candidates=batch_candidates, batch_values=batch_acq_values

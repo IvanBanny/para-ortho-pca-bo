@@ -64,15 +64,16 @@ class PCA_BO(AbstractBayesianOptimizer):
     the original space.
     """
 
-    TIME_PROFILES = ["SingleTaskGP", "optimize_acqf"]
+    TIME_PROFILES = ["fit_gpytorch_mll", "optimize_acqf"]
 
     def __init__(
             self,
             budget: int,
-            n_DoE: int = 0,
+            n_DoE: int = 10,
+            q: int = 1,
+            ortho_samples: int = 0,
             n_components: int = 0,
             var_threshold: float = 0.95,
-            ortho_samples: int = 0,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -86,15 +87,17 @@ class PCA_BO(AbstractBayesianOptimizer):
 
         Args:
             budget (int): Maximum number of function evaluations.
-            n_DoE (int, optional): Number of initial design of experiments samples. Defaults to 0.
+            n_DoE (int, optional): Number of initial design of experiments samples. Defaults to 10.
+            q (int): Number of candidates to sample in parallel (before orthogonalization). Defaults to 1.
+            ortho_samples (int, optional): Number or additional samples in the orthogonal per iteration.
+                                           If 0, only samples the original candidates. Defaults to 0.
             n_components (int, optional): Number of principal components to use. If 0, determined
                                           by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
-            ortho_samples (int, optional): Number or additional samples in the orthogonal per iteration.
-                                           If 0, only samples the original candidate. Defaults to 0.
-            random_seed (int, optional): Random seed for reproducibility. Defaults to 43.
+            acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
+            random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
             torch_config (Dict[str, Any], optional): gpu configuration.
-            visualize (bool, optional): Whether to visualize the acquisition function. Defaults to False.
+            visualize (bool, optional): Whether to make 2d visualizations. Defaults to False.
             vis_output_dir (str, optional): Directory to save visualizations. Defaults to "./visualizations".
             save_logs (bool, optional): Whether to log and save detailed data per iteration. Defaults to False.
             log_dir (str, optional): Directory to save logs. Defaults to "./logs".
@@ -104,20 +107,21 @@ class PCA_BO(AbstractBayesianOptimizer):
         super().__init__(budget, n_DoE, **kwargs)
 
         self.random_seed = random_seed
+        self.q = q
         self.ortho_samples = ortho_samples
 
         # Acquisition function attributes
-        self.__acq_func_class = None
-        self.__acq_func = None
+        self.__acqf_class = None
+        self.__acqf = None
         self.__pacqf = None
         self.acquisition_function_name = acquisition_function
 
         self.__torch_config = {
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
             "dtype": torch.float,
-            "BATCH_SIZE": 1,
             "NUM_RESTARTS": 20,
             "RAW_SAMPLES": 1024,
+            "OPTIMIZE_ACQF_OPTIONS": {"batch_limit": 5, "maxiter": 200, "method": "L-BFGS-B"},
             **(torch_config or {})
         }
 
@@ -196,7 +200,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
 
-            new_z = self.optimize_acqf_and_get_observation()
+            new_z = self.optimize_acqf_and_get_candidates()
             evals = min(
                 len(new_z),
                 ceil((self.budget - self.number_of_function_evaluations) / (self.ortho_samples + 1))
@@ -206,12 +210,12 @@ class PCA_BO(AbstractBayesianOptimizer):
             new_x = self._transform_points_to_original_space(new_z)
 
             if self.ortho_samples:
-                quxt = perf_counter()
+                ortho_start = perf_counter()
                 new_x = self.get_orthogonal_samples(new_x)
                 evals = min(len(new_x), self.budget - self.number_of_function_evaluations)
                 new_x = new_x[: evals]
                 new_z = new_z.repeat_interleave(self.ortho_samples + 1, dim=0)[: evals]
-                print(f"quxt: {perf_counter() - quxt}")
+                print(f"\nMCMC: {perf_counter() - ortho_start}")
 
             bounds_torch = torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T
 
@@ -220,15 +224,15 @@ class PCA_BO(AbstractBayesianOptimizer):
             if not (~outside_bounds).all().item() and self.verbose:
                 print(f"Warning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
 
-            new_f_eval = self.problem(new_x)
+            new_f = self.problem(new_x)
 
             self.x_evals = np.concatenate([self.x_evals, new_x])
             self.__z_evals = torch.cat([self.__z_evals, new_z])
-            self.f_evals = np.concatenate([self.f_evals, new_f_eval])
+            self.f_evals = np.concatenate([self.f_evals, new_f])
 
             print(f"\nSampled:\n"
                   f"    x: {new_x}\n"
-                  f"    f: {new_f_eval}")
+                  f"    f: {new_f}")
 
             if self._pbar is not None:
                 self._pbar.update(evals)
@@ -271,13 +275,14 @@ class PCA_BO(AbstractBayesianOptimizer):
 
             # Create visualizations
             if self.visualize and self.visualizer is not None:
-                self.visualizer.visualize_pcabo(
+                self.visualizer.visualize(
+                    "pcabo",
                     torch.tensor(self.x_evals, device=self.device, dtype=self.dtype),
                     torch.tensor(self.f_evals, device=self.device, dtype=self.dtype),
                     torch.tensor(self.x_evals[self.current_best_index], device=self.device, dtype=self.dtype),
                     torch.tensor(self.bounds, device=self.device, dtype=self.dtype),
-                    new_x, self.component_matrix, self.reduced_space_dim, self.data_mean + self.pca_mean,
-                    self.problem, self.__pacqf, margin=0.1
+                    new_x, self.problem, self.__pacqf,  self.component_matrix,
+                    self.reduced_space_dim, self.data_mean + self.pca_mean, margin=0.1
                 )
 
         # Save the visualization gifs if it was enabled
@@ -422,9 +427,9 @@ class PCA_BO(AbstractBayesianOptimizer):
             z_bounds = torch.stack([-torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype),
                                     torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype)])
 
-        train_obj = torch.from_numpy(self.f_evals).to(device=self.device, dtype=self.dtype)
+        train_obj = torch.tensor(self.f_evals, device=self.device, dtype=self.dtype)
 
-        # Initialize and fit the GPR
+        # Initialize and fit the GP
         start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             self.__z_evals,
@@ -438,10 +443,10 @@ class PCA_BO(AbstractBayesianOptimizer):
         )
         mll = ExactMarginalLogLikelihood(self.__model_obj.likelihood, self.__model_obj)
         fit_gpytorch_mll(mll)
-        self.timing_logs["SingleTaskGP"].append(perf_counter() - start_time)
+        self.timing_logs["fit_gpytorch_mll"].append(perf_counter() - start_time)
 
-    def optimize_acqf_and_get_observation(self) -> Tensor:
-        """Optimize the acquisition function in the reduced space.
+    def optimize_acqf_and_get_candidates(self) -> Tensor:
+        """Optimizes the acquisition function, and returns new candidates in the reduced space.
 
         Returns:
             Tensor: `batch_shape x r`-dim Tensor - new candidate points in the reduced space.
@@ -451,7 +456,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             return torch.randn(1, self.reduced_space_dim, device=self.device, dtype=self.dtype)
 
         # Create original bounds tensor
-        original_bounds = torch.from_numpy(self.bounds).to(device=self.device, dtype=self.dtype)
+        original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
         # Calculate z bounds
         r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
@@ -495,7 +500,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         #
         # batch_initial_conditions = sample_q_batches_from_polytope(
         #     n=self.__torch_config['RAW_SAMPLES']//10,
-        #     q=self.__torch_config['BATCH_SIZE'],
+        #     q=self.q,
         #     bounds=z_bounds,
         #     n_burnin=200,
         #     n_thinning=10,
@@ -510,13 +515,12 @@ class PCA_BO(AbstractBayesianOptimizer):
         candidates, _ = optimize_acqf(
             acq_function=self.__pacqf,
             bounds=z_bounds,
-            q=self.__torch_config['BATCH_SIZE'],
+            q=self.q,
             num_restarts=self.__torch_config['NUM_RESTARTS'],
             raw_samples=self.__torch_config['RAW_SAMPLES'],
             # batch_initial_conditions=batch_initial_conditions,
             # inequality_constraints=inequality_constraints,
-            options={"batch_limit": 1, "maxiter": 500},
-            return_best_only=True
+            options=self.__torch_config['OPTIMIZE_ACQF_OPTIONS'],
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
@@ -532,7 +536,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             A `(ortho_samples + 1) * q x d` Tensor with new candidates.
         """
         # Create original bounds tensor
-        original_bounds = torch.from_numpy(self.bounds).to(device=self.device, dtype=self.dtype)
+        original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
         # Calculate ortho bounds
         r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
@@ -630,16 +634,16 @@ class PCA_BO(AbstractBayesianOptimizer):
     def set_acquisition_function_subclass(self) -> None:
         """Set the acquisition function subclass based on the name."""
         if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acq_func_class = ExpectedImprovement
+            self.__acqf_class = ExpectedImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
-            self.__acq_func_class = ProbabilityOfImprovement
+            self.__acqf_class = ProbabilityOfImprovement
         elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
-            self.__acq_func_class = UpperConfidenceBound
+            self.__acqf_class = UpperConfidenceBound
 
     @property
     def acquisition_function_class(self) -> Callable:
         """Get the acquisition function class."""
-        return self.__acq_func_class
+        return self.__acqf_class
 
     @property
     def acquisition_function(self) -> AnalyticAcquisitionFunction:
@@ -648,7 +652,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         Returns:
             AnalyticAcquisitionFunction: The acquisition function.
         """
-        return self.__acq_func
+        return self.__acqf
 
     @acquisition_function.setter
     def acquisition_function(self, new_acquisition_function: AnalyticAcquisitionFunction) -> None:
@@ -662,10 +666,10 @@ class PCA_BO(AbstractBayesianOptimizer):
         """
         if issubclass(type(new_acquisition_function), AnalyticAcquisitionFunction):
             # Assign in this case
-            self.__acq_func = new_acquisition_function
+            self.__acqf = new_acquisition_function
         else:
             raise AttributeError(
                 "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
                 name="acquisition_function",
-                obj=self.__acq_func
+                obj=self.__acqf
             )
