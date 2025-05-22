@@ -119,14 +119,13 @@ class ExperimentRunner:
                             "var_threshold": f"{self.var_threshold}"
                         })
 
-                        optimizer_class = CleanPCABOInterface
+                        optimizer_class = PCA_BO
                     case "clean-pca":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",
                             "var_threshold": f"{self.var_threshold}"
                         })
-
-                        optimizer_class = PCA_BO
+                        optimizer_class = CleanPCABOInterface
                     case "LPCA_BO":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",

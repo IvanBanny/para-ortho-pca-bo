@@ -1,4 +1,4 @@
-from typing import Union, Callable
+from typing import Union, Callable, Tuple
 
 import torch
 from torch import Tensor
@@ -18,7 +18,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         acquisition_function: The acquisition function
         model: The surrogate model (typically a SingleTaskGP)
         original_bounds: The bounds of the original search space
-        pca_transform_fn: Function to map points from reduced to original space
+        transform_to_original: Function to map points from reduced to original space
         penalty_factor: Factor to control the penalty strength
     """
 
@@ -28,7 +28,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: Model,
             best_f: Union[float, Tensor],
             original_bounds: Tensor,
-            pca_transform_fn: callable,
+            transform_to_original: Callable,
+            transform_to_reduced: Callable,
             penalty_factor: float = 1.0,
     ) -> None:
         """Initialize Penalized Expected Improvement.
@@ -38,7 +39,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: A fitted model
             best_f: The best function value observed so far
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
-            pca_transform_fn: Function that maps points from reduced space to original space
+            transform_to_original: Function that maps points from reduced space to original space
             penalty_factor: Factor to control the strength of the penalty (default: 1.0)
         """
         super().__init__(model=model)
@@ -47,11 +48,12 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # Original bounds of the search space [lower, upper]
         self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
         # PCA transform function reference
-        self.pca_transform_fn = pca_transform_fn
+        self.transform_to_original = transform_to_original
+        self.transform_to_reduced = transform_to_reduced
         # Penalty scaling factor
         self.penalty_factor = penalty_factor
 
-    def _compute_penalty(self, X: Tensor) -> Tensor:
+    def _compute_penalty(self, X: Tensor) -> Tuple[Tensor, Tensor]:
         """Compute the penalty for points that would fall outside the original space.
 
         Args:
@@ -68,7 +70,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         X_flat = X.view(-1, X.shape[-1])
 
         # Map points to original space using the provided transformation function
-        X_orig = self.pca_transform_fn(X_flat)
+        X_orig = self.transform_to_original(X_flat)
 
         # Get original bounds
         lower_bounds = self.original_bounds[:, 0]
@@ -80,6 +82,9 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
 
         outside_trust_lower = torch.zeros_like(outside_lower)
         outside_trust_upper = torch.zeros_like(outside_upper)
+
+        # Calculate closest feasible point by clamping to bounds
+        closest_feasible = torch.clamp(X_orig, lower_bounds, upper_bounds)
 
         # Compute distance to boundary for points outside bounds
         #distance_to_boundary = torch.sum(outside_lower + outside_upper, dim=-1)
@@ -102,7 +107,10 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         is_feasible = (distance_to_boundary == 0)
         penalty = torch.where(is_feasible, torch.zeros_like(penalty), penalty)
 
-        return penalty
+        # Reshape closest feasible points to match original batch dimensions
+        closest_feasible = closest_feasible.view(*batch_shape, q, -1)
+
+        return penalty, closest_feasible
 
     @t_batch_mode_transform()
     def forward(self, X: Tensor) -> Tensor:
@@ -118,7 +126,16 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         acqf_values = self.acquisition_function(X)
 
         # Check if points would be feasible in original space
-        penalty = self._compute_penalty(X)
+        penalty, closest_feasible = self._compute_penalty(X)
+
+        X_flat = X.view(-1, X.shape[-1])
+
+        # Map points to original space using the provided transformation function
+        X_orig = self.transform_to_original(X_flat)
+
+        t = self.transform_to_reduced(closest_feasible.squeeze(1)).unsqueeze(1)
+
+        acqf_values_closest_feasible = self.acquisition_function(t)
 
         # Combine EI with penalty:
         # - For feasible points, use EI value (penalty is 0)
@@ -126,7 +143,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         is_feasible = (penalty == 0)
 
         # Where feasible, use EI; where infeasible, use penalty
-        pei_values = torch.where(is_feasible, acqf_values, penalty)
+        pei_values = torch.where(is_feasible, acqf_values, acqf_values_closest_feasible + penalty)
 
         return pei_values
 

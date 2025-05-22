@@ -1,10 +1,12 @@
 import math
 
+import numpy
 import numpy as np
 import torch
 from botorch.models import SingleTaskGP
 from botorch.models.transforms import Standardize, Normalize
 from gpytorch.kernels import MaternKernel
+from numpy.linalg import norm
 
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, MyPCA
 
@@ -17,7 +19,7 @@ class CleanLPCABO(CleanPCABO):
         self.length_min = 0.5 ** 7
         self.length_max = 1.6
         self.length_init = 0.8
-        self.length = self.length_ini
+        self.length = self.length_init
         # new points + function values with the current best
         self.X = np.zeros((0, self.X.shape[1]))
         self.fX = np.zeros(0)
@@ -36,15 +38,10 @@ class CleanLPCABO(CleanPCABO):
                 self.update_trust_region()
 
     def filter_points(self):
-        # 1. Determine center of trust region (current best)
-        idx_best = np.argmin(self.X)  # For minimization
-        x_center = self.X[idx_best]
+        # get trust region bounds
+        lb, ub = self.return_tr_bounds()
 
-        # 2. Compute trust region bounds
-        lb = np.clip(x_center - self.length / 2.0, 0.0, 1.0)
-        ub = np.clip(x_center + self.length / 2.0, 0.0, 1.0)
-
-        # 3. Filter points inside trust region
+        # Filter points inside trust region
         return np.all((self.X >= lb) & (self.X <= ub), axis=1)
 
     # FIT PCA TO DATA WITHIN TRUST REGION
@@ -60,20 +57,25 @@ class CleanLPCABO(CleanPCABO):
             pca_num_components=self.pca_num_components,
             maximization=self.maximization
         )
+    def calculate_reduced_space_bounds(self, pca: MyPCA):
+        C = np.abs(self.return_tr_bounds()[:, 0] - self.return_tr_bounds()[:, 1]) / 2
+        radius = norm(self.return_tr_bounds()[:, 0] - C)
 
-    def create_gpr_model(self, points_z):
-        z_bounds = self.calculate_reduced_space_bounds()
-        in_tr = self.filter_points()
-        return SingleTaskGP(
-            torch.from_numpy(points_z[in_tr]),
-            torch.from_numpy(self.fX.reshape((-1, 1))),
-            covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
-            outcome_transform=Standardize(m=1),
-            input_transform=Normalize(
-                d=points_z.shape[-1],
-                bounds=torch.from_numpy(z_bounds)
-            )
-        )
+        z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
+
+        return z_bounds
+
+    # CALCULATE TRUST REGION BOUNDS
+    def return_tr_bounds(self):
+        # 1. Determine center of trust region (current best)
+        idx_best = np.argmin(self.X)  # For minimization
+        x_center = self.X[idx_best]
+
+        # 2. Compute trust region bounds
+        lb = x_center - self.length / 2.0
+        ub = x_center + self.length / 2.0
+
+        return np.stack([lb, ub], axis=1)
 
     # ADJUST TRUST REGION
     def update_trust_region(self, ):

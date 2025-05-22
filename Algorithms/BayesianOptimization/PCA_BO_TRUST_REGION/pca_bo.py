@@ -1,17 +1,27 @@
 import typing
+from enum import Enum
 from typing import Callable
 
 import numpy as np
 import torch
+from botorch import fit_gpytorch_mll
+from botorch.acquisition import (
+    LogExpectedImprovement,
+    ProbabilityOfImprovement,
+    UpperConfidenceBound, AnalyticAcquisitionFunction
+)
 from botorch.models import SingleTaskGP
 from botorch.models.transforms import Standardize, Normalize
 from botorch.optim import optimize_acqf
+from gpytorch import ExactMarginalLogLikelihood
 from gpytorch.kernels import MaternKernel
+from numpy.linalg import norm
 from sklearn.decomposition import PCA
 
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import LHS_sampler
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
+USE_CONSTRAINTS = True
 
 class DOE:
     def __init__(
@@ -73,6 +83,46 @@ class PCBANumComponents:
         raise "Illegal state"
 
 
+class MyPCA:
+    def __init__(
+            self,
+            points_x: np.ndarray,
+            points_y: np.ndarray,
+            maximization: bool,
+            pca_num_components: PCBANumComponents
+    ):
+        weights = calculate_weights(maximization, points_y)
+
+        self.data_mean = np.mean(points_x, axis=0)
+        points_x_centered = points_x - self.data_mean
+
+        weighted_points_x = points_x_centered * weights[:, np.newaxis]
+
+        self.pca = PCA()
+        self.pca.fit(weighted_points_x)
+
+        self.pca.components_ = self.pca.components_[:pca_num_components(self.pca)]
+
+    def transform_to_reduced(self, points_x: np.ndarray) -> np.ndarray:
+        assert points_x.shape[-1] == self.data_mean.shape[0]
+
+        return self.pca.transform(points_x - self.data_mean)
+
+    def transform_to_original(self, points_z: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
+        assert points_z.shape[-1] == self.pca.components_.shape[0], f"{points_z} {self.pca.components_.shape[0]}"
+
+        if isinstance(points_z, torch.Tensor):
+            components = torch.from_numpy(self.pca.components_)
+            mean = torch.from_numpy(self.data_mean)
+            mean_ = torch.from_numpy(self.pca.mean_)
+            return mean + torch.matmul(points_z, components) + mean_
+
+        return self.data_mean + self.pca.inverse_transform(points_z)
+
+
+
+    
+
 class CleanPCABO:
 
     function_evaluation_count = 0
@@ -94,6 +144,11 @@ class CleanPCABO:
         self.acquisition_function_class = acquisition_function_class
         self.pca_num_components = pca_num_components
 
+        # print("SETTING 64 BIT PRECISION")
+        # torch.set_default_dtype(torch.float64)
+
+        print(f"acquisition_function_class: {acquisition_function_class}")
+
         self.X = np.zeros((0, self.d))
         self.fX = np.zeros(0)
 
@@ -108,24 +163,29 @@ class CleanPCABO:
     def optimize(self):
         while self.budget > self.function_evaluation_count:
             self.iteration()
+        print(self.current_best)
 
 
     def iteration(self):
         pca = self.fit_pca()
 
+        z_bounds = self.calculate_reduced_space_bounds(pca)
+
         points_z = pca.transform_to_reduced(self.X)
 
-        gpr_model = self.create_gpr_model(points_z)
+        gpr_model = self.create_gpr_model(points_z, z_bounds)
 
         acquisition_function = self.create_acquisition_function(gpr_model)
 
         penalized_acquisition_function = self.create_penalized_acquisition(acquisition_function, gpr_model, pca)
 
-        chosen_point_z = self.optimize_acquisition(penalized_acquisition_function)
+        chosen_point_z = self.optimize_acquisition(pca, penalized_acquisition_function, z_bounds)
 
         chosen_point_x = pca.transform_to_original(chosen_point_z)
 
         self.eval_at(chosen_point_x)
+
+        print(chosen_point_x, self.fX[-1])
 
     def fit_pca(self):
         return MyPCA(
@@ -135,9 +195,8 @@ class CleanPCABO:
             maximization=self.maximization
         )
 
-    def create_gpr_model(self, points_z):
-        z_bounds = self.calculate_reduced_space_bounds()
-        return SingleTaskGP(
+    def create_gpr_model(self, points_z, z_bounds):
+        model = SingleTaskGP(
             torch.from_numpy(points_z),
             torch.from_numpy(self.fX.reshape((-1, 1))),
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
@@ -145,10 +204,14 @@ class CleanPCABO:
             input_transform=Normalize(
                 d=points_z.shape[-1],
                 bounds=torch.from_numpy(z_bounds)
-            )
+            ),
         )
 
-    def create_acquisition_function(self, gpr_model):
+        mll = ExactMarginalLogLikelihood(model.likelihood, model)
+        fit_gpytorch_mll(mll)
+        return model
+
+    def create_acquisition_function(self, gpr_model) -> AnalyticAcquisitionFunction:
         return self.acquisition_function_class(
             model=gpr_model,
             best_f=self.current_best,
@@ -156,34 +219,93 @@ class CleanPCABO:
         )
 
     def create_penalized_acquisition(self, acquisition_function, gpr_model, pca):
+        if USE_CONSTRAINTS:
+            return acquisition_function
         return PenalizedAcqf(
             acquisition_function=acquisition_function,
             model=gpr_model,
             best_f=self.current_best,
             original_bounds=torch.from_numpy(self.bounds),
-            pca_transform_fn=lambda points_x_tensor: torch.from_numpy(
-                pca.transform_to_original(points_x_tensor.detach().numpy())
+            transform_to_original=lambda points_x_tensor: pca.transform_to_original(points_x_tensor),
+            transform_to_reduced=lambda points_x_tensor: torch.from_numpy(
+                pca.transform_to_reduced(points_x_tensor.detach().numpy())
             ),
-            penalty_factor=1000.0
+            penalty_factor=1000
         )
 
-    def optimize_acquisition(self, penalized_acquizition_function):
-        z_bounds = self.calculate_reduced_space_bounds()
+    def optimize_acquisition(self, pca: MyPCA, penalized_acquisition_function, z_bounds):
+        inequality_constraints = None
+        if USE_CONSTRAINTS:
+            # Get PCA components and means for transformation
+            components = torch.from_numpy(pca.pca.components_)  # shape: [n_components, n_features]
+            data_mean = torch.from_numpy(pca.data_mean)  # shape: [n_features]
+            pca_mean = torch.from_numpy(
+                pca.pca.mean_ if hasattr(pca.pca, 'mean_') else np.zeros_like(pca.data_mean)) # shape: [n_features]
+    
+            # Get original bounds as tensors
+            lower_bounds = torch.from_numpy(self.bounds[:, 0])  # shape: [n_features]
+            upper_bounds = torch.from_numpy(self.bounds[:, 1])  # shape: [n_features]
+    
+            # The transformation from reduced to original space is:
+            # x_orig = data_mean + components.T @ z + pca_mean
+            # So we need to ensure:
+            # lower_bounds <= data_mean + components.T @ z + pca_mean <= upper_bounds
+    
+            # Calculate the offset (data_mean + pca_mean)
+            total_offset = data_mean + pca_mean
+    
+            # Format inequality constraints according to botorch requirements
+            # We need to create constraints in the form:
+            # sum_i (X[indices[i]] * coefficients[i]) >= rhs
+    
+            inequality_constraints = []
+            n_components = components.shape[0]  # Number of PCA components
+    
+            # For each dimension in the original space
+            for dim in range(self.d):
+                # Upper bound constraint: components[dim] @ z <= upper_bounds[dim] - total_offset[dim]
+                # Convert to: -components[dim] @ z >= -(upper_bounds[dim] - total_offset[dim])
+                upper_indices = torch.arange(n_components, dtype=torch.long)
+                upper_coefficients = -components[:, dim].cpu()  # Transfer to CPU for constraint definition
+                upper_rhs = -(upper_bounds[dim] - total_offset[dim]).cpu()
+                inequality_constraints.append((upper_indices, upper_coefficients, upper_rhs))
+    
+                # Lower bound constraint: components[dim] @ z >= lower_bounds[dim] - total_offset[dim]
+                lower_indices = torch.arange(n_components, dtype=torch.long)
+                lower_coefficients = components[:, dim].cpu()  # Transfer to CPU for constraint definition
+                lower_rhs = (lower_bounds[dim] - total_offset[dim]).cpu()
+                inequality_constraints.append((lower_indices, lower_coefficients, lower_rhs))
+    
+            # Move acquisition function to the selected device
+            if hasattr(penalized_acquisition_function, 'to'):
+                penalized_acquisition_function = penalized_acquisition_function
+    
+            # If the acquisition function contains a model, move it to the device
+            if hasattr(penalized_acquisition_function, 'model') and hasattr(penalized_acquisition_function.model, 'to'):
+                penalized_acquisition_function.model = penalized_acquisition_function.model
+
+
+        raw_samples = 5  # TODO make configurable
+        # Optimize the acquisition function
         candidates, _ = optimize_acqf(
-            acq_function=penalized_acquizition_function,
+            acq_function=penalized_acquisition_function,
             bounds=torch.from_numpy(z_bounds),
             q=1,
-            num_restarts=5,
-            raw_samples=150, # TODO make configurable
-            options={"batch_limit": 5, "maxiter": 500},
-            return_best_only=True
+            num_restarts=2,
+            raw_samples=raw_samples,
+            #options={"batch_limit": 50, "maxiter": 500, "device": device},
+            return_best_only=True,
+            inequality_constraints=inequality_constraints,  # Properly formatted inequality constraints
         )
-        return candidates.detach().numpy().reshape(-1)
 
-    def calculate_reduced_space_bounds(self):
-        # TODO fix this up
-        r = np.min(np.abs(self.bounds[:, 0] - self.bounds[:, 1])) / 2
-        z_bounds = np.array([[-r], [r]]).repeat(1, axis=1)
+        # Transfer results back to CPU and convert to numpy
+        return candidates.cpu().detach().numpy().reshape(-1)
+
+    def calculate_reduced_space_bounds(self, pca: MyPCA):
+        C = np.abs(self.bounds[:, 0] - self.bounds[:, 1]) / 2
+        radius = norm(self.bounds[:, 0] - C)
+
+        z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
 
         return z_bounds
 
@@ -231,45 +353,6 @@ def calculate_weights(maximization: bool, points_y: np.ndarray) -> np.ndarray:
 
     return weights
 
-
-class MyPCA:
-    def __init__(
-            self,
-            points_x: np.ndarray,
-            points_y: np.ndarray,
-            maximization: bool,
-            pca_num_components: PCBANumComponents
-    ):
-        weights = calculate_weights(maximization, points_y)
-        
-        self.data_mean = np.mean(points_x, axis=0)
-        points_x_centered = points_x - self.data_mean
-
-        weighted_points_x = points_x_centered * weights[:, np.newaxis]
-
-        self.pca = PCA()
-        self.pca.fit(weighted_points_x)
-
-        self.pca.components_ = self.pca.components_[:pca_num_components(self.pca)]
-        
-
-    def transform_to_reduced(self, points_x: np.ndarray) -> np.ndarray:
-        assert points_x.shape[-1] == self.data_mean.shape[0]
-
-        return self.pca.transform(points_x - self.data_mean)
-
-    def transform_to_original(self, points_z: np.ndarray) -> np.ndarray:
-        assert points_z.shape[-1] == self.pca.n_components_
-
-        return self.data_mean + self.pca.inverse_transform(points_z)
-
-
-from enum import Enum
-from botorch.acquisition import (
-    LogExpectedImprovement,
-    ProbabilityOfImprovement,
-    UpperConfidenceBound
-)
 
 
 

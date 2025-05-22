@@ -99,11 +99,12 @@ def main():
 
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
-        args.dimensions = [5]  # Use only 5D
+        args.dimensions = [2]  # Use only 2D
         args.problems = [15, 20]  # Use only problems 15 and 20
         args.runs = 30  # Just 30 runs
         args.budget_factor = 5  # Small budget
         args.doe_factor = 2.0  # Small DoE
+        args.var_threshold = 0.001
         print("\nRunning in quick test mode with minimal settings")
 
     # Initialize experiment runner
