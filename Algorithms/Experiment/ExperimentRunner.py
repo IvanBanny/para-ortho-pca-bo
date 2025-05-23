@@ -19,6 +19,7 @@ from ioh.iohcpp.logger.trigger import ALWAYS
 from Algorithms import Vanilla_BO
 from Algorithms import PCA_BO
 from Algorithms.BayesianOptimization.LPCA_BO.LPCA_BO import LPCA_BO
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo_interface_class import CleanLPCABOInterface
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import CleanPCABOInterface
 
 
@@ -126,6 +127,12 @@ class ExperimentRunner:
                             "var_threshold": f"{self.var_threshold}"
                         })
                         optimizer_class = CleanPCABOInterface
+                    case "clean-lpca":
+                        logger.set_experiment_attributes({
+                            "pca_components": f"{self.pca_components}",
+                            "var_threshold": f"{self.var_threshold}"
+                        })
+                        optimizer_class = CleanLPCABOInterface
                     case "LPCA_BO":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",
@@ -192,6 +199,19 @@ class ExperimentRunner:
 
                             case "clean-pca":
                                 optimizer = CleanPCABOInterface(
+                                    budget=budget,
+                                    n_DoE=n_doe,
+                                    var_threshold=self.var_threshold,
+                                    acquisition_function=self.acquisition_function,
+                                    random_seed=random_seed,
+                                    maximization=maximization,
+                                    verbose=self.verbose,
+                                    DoE_parameters=self.doe_params,
+                                    pbar=pbar
+                                )
+
+                            case "clean-lpca":
+                                optimizer = CleanLPCABOInterface(
                                     budget=budget,
                                     n_DoE=n_doe,
                                     var_threshold=self.var_threshold,

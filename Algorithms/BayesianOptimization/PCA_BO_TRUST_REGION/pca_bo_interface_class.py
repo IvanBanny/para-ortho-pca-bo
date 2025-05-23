@@ -281,7 +281,7 @@ def plot2d(pcabo: CleanPCABOWithLogging):
                            label='Best point')
 
             # Plot trust region bounds if available
-            if iteration_data.bounds is not None and i > 0:
+            if iteration_data.bounds is not None:
                 local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
                 local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
 

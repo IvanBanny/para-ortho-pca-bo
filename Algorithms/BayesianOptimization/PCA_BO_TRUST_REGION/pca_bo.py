@@ -143,17 +143,13 @@ class CleanPCABO:
         self.maximization = maximization
         self.acquisition_function_class = acquisition_function_class
         self.pca_num_components = pca_num_components
+        self.doe = doe
 
-        # print("SETTING 64 BIT PRECISION")
-        # torch.set_default_dtype(torch.float64)
 
         print(f"acquisition_function_class: {acquisition_function_class}")
 
         self.X = np.zeros((0, self.d))
         self.fX = np.zeros(0)
-
-        # Get and evaluate initial DoE points
-        [self.eval_at(point) for point in doe.get_points(bounds)]
 
         self.optimize()
 
@@ -161,11 +157,16 @@ class CleanPCABO:
 
 
     def optimize(self):
+        # Get and evaluate initial DoE points
+        [self.eval_at(point) for point in self.doe.get_points(self.bounds)]
+
         while self.budget > self.function_evaluation_count:
             self.iteration()
         print(self.current_best)
 
 
+    def filter_points(self): # TODO maybe this class should not have this much trust region abstractions like this
+        return np.full(self.fX.shape, True)
     def iteration(self):
         pca = self.fit_pca()
 
@@ -197,8 +198,8 @@ class CleanPCABO:
 
     def create_gpr_model(self, points_z, z_bounds):
         model = SingleTaskGP(
-            torch.from_numpy(points_z),
-            torch.from_numpy(self.fX.reshape((-1, 1))),
+            torch.from_numpy(points_z[self.filter_points()]),
+            torch.from_numpy(self.fX[self.filter_points()].reshape((-1, 1))),
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
             outcome_transform=Standardize(m=1),
             input_transform=Normalize(
@@ -218,6 +219,10 @@ class CleanPCABO:
             maximize=self.maximization
         )
 
+
+    def return_tr_bounds(self):
+        return self.bounds
+
     def create_penalized_acquisition(self, acquisition_function, gpr_model, pca):
         if USE_CONSTRAINTS:
             return acquisition_function
@@ -225,7 +230,7 @@ class CleanPCABO:
             acquisition_function=acquisition_function,
             model=gpr_model,
             best_f=self.current_best,
-            original_bounds=torch.from_numpy(self.bounds),
+            original_bounds=torch.from_numpy(self.return_tr_bounds()),
             transform_to_original=lambda points_x_tensor: pca.transform_to_original(points_x_tensor),
             transform_to_reduced=lambda points_x_tensor: torch.from_numpy(
                 pca.transform_to_reduced(points_x_tensor.detach().numpy())
@@ -243,8 +248,8 @@ class CleanPCABO:
                 pca.pca.mean_ if hasattr(pca.pca, 'mean_') else np.zeros_like(pca.data_mean)) # shape: [n_features]
     
             # Get original bounds as tensors
-            lower_bounds = torch.from_numpy(self.bounds[:, 0])  # shape: [n_features]
-            upper_bounds = torch.from_numpy(self.bounds[:, 1])  # shape: [n_features]
+            lower_bounds = torch.from_numpy(self.return_tr_bounds()[:, 0])  # shape: [n_features]
+            upper_bounds = torch.from_numpy(self.return_tr_bounds()[:, 1])  # shape: [n_features]
     
             # The transformation from reduced to original space is:
             # x_orig = data_mean + components.T @ z + pca_mean
@@ -302,8 +307,9 @@ class CleanPCABO:
         return candidates.cpu().detach().numpy().reshape(-1)
 
     def calculate_reduced_space_bounds(self, pca: MyPCA):
-        C = np.abs(self.bounds[:, 0] - self.bounds[:, 1]) / 2
-        radius = norm(self.bounds[:, 0] - C)
+        tr_bounds = self.return_tr_bounds()
+        C = np.abs(tr_bounds[:, 0] - tr_bounds[:, 1]) / 2
+        radius = norm(tr_bounds[:, 0] - C)
 
         z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
 

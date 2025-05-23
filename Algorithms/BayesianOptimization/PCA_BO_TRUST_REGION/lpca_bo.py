@@ -28,6 +28,9 @@ class CleanLPCABO(CleanPCABO):
         self.succtol = 3
         self.failtol = 3
         self.length = self.length_init
+        [self.eval_at(point) for point in self.doe.get_points(self.bounds)]
+
+        [self.eval_at(point) for point in self.doe.get_points(self.return_tr_bounds())]
 
     # OPTIMIZATION LOOP
     def optimize(self):
@@ -39,10 +42,36 @@ class CleanLPCABO(CleanPCABO):
 
     def filter_points(self):
         # get trust region bounds
-        lb, ub = self.return_tr_bounds()
+        bounds = self.return_tr_bounds()
+
+        lb = bounds[:, 0]
+        ub = bounds[:, 1]
 
         # Filter points inside trust region
-        return np.all((self.X >= lb) & (self.X <= ub), axis=1)
+        mask = np.all((self.X >= lb) & (self.X <= ub), axis=1)
+
+        if sum(mask) < 2:
+            # Calculate Manhattan distance from each point to the trust region bounds
+            distances = np.zeros(len(self.X))
+            for i, point in enumerate(self.X):
+                # Distance to trust region is 0 if inside, otherwise sum of distances to closest bounds
+                dist_to_bounds = 0
+                for j in range(len(point)):
+                    if point[j] < lb[j]:
+                        dist_to_bounds += lb[j] - point[j]
+                    elif point[j] > ub[j]:
+                        dist_to_bounds += point[j] - ub[j]
+                distances[i] = dist_to_bounds
+
+            # Get indices of the n closest points to the trust region
+            closest_indices = np.argsort(distances)[:2]
+
+            # Update mask to include these n closest points
+            mask[closest_indices] = True
+
+        assert np.sum(mask) >= 2
+
+        return mask
 
     # FIT PCA TO DATA WITHIN TRUST REGION
     def fit_pca(self):
@@ -57,18 +86,11 @@ class CleanLPCABO(CleanPCABO):
             pca_num_components=self.pca_num_components,
             maximization=self.maximization
         )
-    def calculate_reduced_space_bounds(self, pca: MyPCA):
-        C = np.abs(self.return_tr_bounds()[:, 0] - self.return_tr_bounds()[:, 1]) / 2
-        radius = norm(self.return_tr_bounds()[:, 0] - C)
-
-        z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
-
-        return z_bounds
 
     # CALCULATE TRUST REGION BOUNDS
     def return_tr_bounds(self):
         # 1. Determine center of trust region (current best)
-        idx_best = np.argmin(self.X)  # For minimization
+        idx_best = np.argmin(self.fX)  # For minimization
         x_center = self.X[idx_best]
 
         # 2. Compute trust region bounds

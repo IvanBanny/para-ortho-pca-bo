@@ -109,7 +109,7 @@ def main():
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
-        algorithms=["clean-pca"],
+        algorithms=["clean-lpca"],
         dimensions=args.dimensions,
         problem_ids=args.problems,
         num_runs=args.runs,
