@@ -164,13 +164,10 @@ class CleanPCABO:
             self.iteration()
         print(self.current_best)
 
-
-    def filter_points(self): # TODO maybe this class should not have this much trust region abstractions like this
-        return np.full(self.fX.shape, True)
     def iteration(self):
         pca = self.fit_pca()
 
-        z_bounds = self.calculate_reduced_space_bounds(pca)
+        z_bounds = calculate_reduced_space_bounds(self.return_tr_bounds(), pca)
 
         points_z = pca.transform_to_reduced(self.X)
 
@@ -198,8 +195,8 @@ class CleanPCABO:
 
     def create_gpr_model(self, points_z, z_bounds):
         model = SingleTaskGP(
-            torch.from_numpy(points_z[self.filter_points()]),
-            torch.from_numpy(self.fX[self.filter_points()].reshape((-1, 1))),
+            torch.from_numpy(points_z),
+            torch.from_numpy(self.fX.reshape((-1, 1))),
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
             outcome_transform=Standardize(m=1),
             input_transform=Normalize(
@@ -306,14 +303,6 @@ class CleanPCABO:
         # Transfer results back to CPU and convert to numpy
         return candidates.cpu().detach().numpy().reshape(-1)
 
-    def calculate_reduced_space_bounds(self, pca: MyPCA):
-        tr_bounds = self.return_tr_bounds()
-        C = np.abs(tr_bounds[:, 0] - tr_bounds[:, 1]) / 2
-        radius = norm(tr_bounds[:, 0] - C)
-
-        z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
-
-        return z_bounds
 
 
     def eval_at(self, point_x: np.ndarray):
@@ -360,6 +349,13 @@ def calculate_weights(maximization: bool, points_y: np.ndarray) -> np.ndarray:
     return weights
 
 
+def calculate_reduced_space_bounds(tr_bounds: np.ndarray, pca: MyPCA):
+    C = np.abs(tr_bounds[:, 0] - tr_bounds[:, 1]) / 2
+    radius = norm(tr_bounds[:, 0] - C)
+
+    z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
+
+    return z_bounds
 
 
 class AcquisitionFunctionEnum(Enum):

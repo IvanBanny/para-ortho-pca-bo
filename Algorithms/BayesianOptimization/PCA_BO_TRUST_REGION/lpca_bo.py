@@ -30,8 +30,6 @@ class CleanLPCABO(CleanPCABO):
         self.length = self.length_init
         [self.eval_at(point) for point in self.doe.get_points(self.bounds)]
 
-        [self.eval_at(point) for point in self.doe.get_points(self.return_tr_bounds())]
-
     # OPTIMIZATION LOOP
     def optimize(self):
         while self.budget > self.function_evaluation_count:
@@ -50,7 +48,9 @@ class CleanLPCABO(CleanPCABO):
         # Filter points inside trust region
         mask = np.all((self.X >= lb) & (self.X <= ub), axis=1)
 
-        if sum(mask) < 2:
+        min_num_points = max(bounds.shape[0], 2)
+
+        if sum(mask) < min_num_points:
             # Calculate Manhattan distance from each point to the trust region bounds
             distances = np.zeros(len(self.X))
             for i, point in enumerate(self.X):
@@ -69,7 +69,7 @@ class CleanLPCABO(CleanPCABO):
             # Update mask to include these n closest points
             mask[closest_indices] = True
 
-        assert np.sum(mask) >= 2
+        assert np.sum(mask) >= min_num_points
 
         return mask
 
@@ -93,11 +93,21 @@ class CleanLPCABO(CleanPCABO):
         idx_best = np.argmin(self.fX)  # For minimization
         x_center = self.X[idx_best]
 
-        # 2. Compute trust region bounds
-        lb = x_center - self.length / 2.0
-        ub = x_center + self.length / 2.0
+        ub = self.bounds[:, 1]
+        lb = self.bounds[:, 0]
 
-        return np.stack([lb, ub], axis=1)
+        bounds_width = ub - lb
+
+        assert np.all(bounds_width > 0)
+
+        # 2. Compute trust region bounds
+        tr_lb = x_center - self.length / 2.0 * bounds_width
+        tr_ub = x_center + self.length / 2.0 * bounds_width
+
+        tr_ub = np.minimum(tr_ub, ub)
+        tr_lb = np.maximum(tr_lb, lb)
+
+        return np.stack([tr_lb, tr_ub], axis=1)
 
     # ADJUST TRUST REGION
     def update_trust_region(self, ):

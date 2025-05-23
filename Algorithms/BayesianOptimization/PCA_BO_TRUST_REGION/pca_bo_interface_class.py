@@ -11,7 +11,7 @@ from ioh.iohcpp.problem import RealSingleObjective, BBOB
 
 from Algorithms.AbstractAlgorithm import AbstractAlgorithm
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, DOE, AcquisitionFunctionEnum, \
-    PCBANumComponents, MyPCA
+    PCBANumComponents, MyPCA, calculate_reduced_space_bounds
 
 examplePath = r"example.pkl"
 
@@ -295,7 +295,7 @@ def plot2d(pcabo: CleanPCABOWithLogging):
             # Add PC1 component visualization if PCA is available
             if iteration_data.pca is not None:
                 # Calculate endpoints of PC1 in original space
-                z_bounds = pcabo.calculate_reduced_space_bounds(iteration_data.pca)
+                z_bounds = calculate_reduced_space_bounds(iteration_data.bounds, iteration_data.pca)
                 pc1_pos = iteration_data.pca.transform_to_original(z_bounds[0].reshape(1, 1))
                 pc1_neg = iteration_data.pca.transform_to_original(z_bounds[1].reshape(1, 1))
 
