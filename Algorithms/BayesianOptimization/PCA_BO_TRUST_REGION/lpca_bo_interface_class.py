@@ -1,9 +1,5 @@
-import dataclasses
 import pickle
-from abc import ABC
 from typing import Union, Callable, Optional, Dict, Any, List
-
-
 
 import numpy as np
 import torch
@@ -11,9 +7,9 @@ from ioh.iohcpp.problem import RealSingleObjective, BBOB
 
 from Algorithms.AbstractAlgorithm import AbstractAlgorithm
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo import CleanLPCABO
-from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, DOE, AcquisitionFunctionEnum, \
-    PCBANumComponents, MyPCA
-from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import plot2d, IterationData
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import DOE, AcquisitionFunctionEnum, \
+    PCBANumComponents
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import IterationData
 
 examplePath = r"examplelpcabo.pkl"
 
@@ -61,6 +57,9 @@ class CleanLPCABOInterface(AbstractAlgorithm):
         super().__call__(problem, dim, bounds, **kwargs)
 
         assert isinstance(problem, Callable)
+
+        np.random.seed(self.random_seed)
+        torch.manual_seed(self.random_seed)
 
         clean_pcabo = CleanLPCABOWithLogging(
             problem=problem,
@@ -198,4 +197,5 @@ if __name__ == "__main__":
         loaded_data : CleanLPCABOWithLogging = pickle.load(f)
         print(len(loaded_data.iterations))
         print(loaded_data.X)
+        from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.plots import plot2d
         plot2d(loaded_data)
