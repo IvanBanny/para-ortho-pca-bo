@@ -156,11 +156,13 @@ class CleanLPCABOWithLogging(CleanLPCABO):
                 # Convert to tensor
                 z_tensor = torch.from_numpy(z_points.reshape(-1, 1, 1))
                 # Get acqf values
-                acqf_values = penalized_acqf(z_tensor).detach().numpy().flatten()
+                pacqf_values = penalized_acqf(z_tensor).detach().numpy().flatten()
+                acqf_values = acquisition_function(z_tensor).detach().numpy().flatten()
 
             # Store for visualization
-            iteration.acqf_x = z_points
             iteration.acqf_y = acqf_values
+            iteration.pacqf_y = pacqf_values
+            iteration.acqf_x = z_points
 
         return penalized_acqf
 

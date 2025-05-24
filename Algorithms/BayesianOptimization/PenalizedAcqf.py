@@ -128,11 +128,6 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # Check if points would be feasible in original space
         penalty, closest_feasible = self._compute_penalty(X)
 
-        X_flat = X.view(-1, X.shape[-1])
-
-        # Map points to original space using the provided transformation function
-        X_orig = self.transform_to_original(X_flat)
-
         t = self.transform_to_reduced(closest_feasible.squeeze(1)).unsqueeze(1)
 
         acqf_values_closest_feasible = self.acquisition_function(t)

@@ -21,7 +21,7 @@ from sklearn.decomposition import PCA
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import LHS_sampler
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
-USE_CONSTRAINTS = True
+USE_CONSTRAINTS = False
 
 class DOE:
     def __init__(

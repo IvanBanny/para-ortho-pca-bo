@@ -100,7 +100,7 @@ def main():
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
         args.dimensions = [2]  # Use only 2D
-        args.problems = [15, 20]  # Use only problems 15 and 20
+        args.problems = [21]  # Use only problems 15 and 20
         args.runs = 30  # Just 30 runs
         args.budget_factor = 5  # Small budget
         args.doe_factor = 2.0  # Small DoE

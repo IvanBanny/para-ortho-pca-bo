@@ -110,18 +110,23 @@ class CleanLPCABO(CleanPCABO):
         return np.stack([tr_lb, tr_ub], axis=1)
 
     # ADJUST TRUST REGION
-    def update_trust_region(self, ):
-        fX_next = self.X[-1]
+    def update_trust_region(self):
+        fX_next = self.fX[-1]
+        # TODO consider self.maximization
         if np.min(fX_next) < np.min(self.fX) - 1e-3 * math.fabs(np.min(self.fX)):
             self.succcount += 1
             self.failcount = 0
+            print("succcount", self.succcount)
         else:
             self.succcount = 0
             self.failcount += 1
+            print("failcount", self.succcount)
 
         if self.succcount == self.succtol:  # Expand trust region
+            print("expanding trust region")
             self.length = min([2.0 * self.length, self.length_max])
             self.succcount = 0
         elif self.failcount == self.failtol:  # Shrink trust region
+            print("shrinking trust region")
             self.length /= 2.0
             self.failcount = 0
