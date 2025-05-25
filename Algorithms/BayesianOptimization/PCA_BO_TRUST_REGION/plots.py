@@ -356,34 +356,31 @@ def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[f
     if abs(direction_x) > 1e-10:
         t = (x_max - center_x) / direction_x
         y_intersect = center_y + t * direction_y
-        if y_min <= y_intersect <= y_max:
-            intersection_params.append(t)
+        intersection_params.append(t)
 
     # Bottom boundary (y = y_min)
     if abs(direction_y) > 1e-10:  # Avoid division by zero
         t = (y_min - center_y) / direction_y
         x_intersect = center_x + t * direction_x
-        if x_min <= x_intersect <= x_max:
-            intersection_params.append(t)
+        intersection_params.append(t)
 
     # Top boundary (y = y_max)
     if abs(direction_y) > 1e-10:
         t = (y_max - center_y) / direction_y
         x_intersect = center_x + t * direction_x
-        if x_min <= x_intersect <= x_max:
-            intersection_params.append(t)
+        intersection_params.append(t)
 
     if len(intersection_params) < 2:
         raise ValueError(f"Found only {len(intersection_params)} intersection points, expected 2")
 
     # Remove duplicates and sort
-    intersection_params = sorted(list(set(np.round(intersection_params, 10))))
+    intersection_params = sorted(list(intersection_params))
 
     if len(intersection_params) < 2:
         raise ValueError("After removing duplicates, found less than 2 intersection points")
 
     # Take the two extreme intersection points
-    t_min, t_max = intersection_params[0], intersection_params[-1]
+    t_min, t_max = intersection_params[1], intersection_params[2]
 
     # Convert parametric distances to PC1 coordinates
     # Since we normalized the direction vector, t represents the actual distance

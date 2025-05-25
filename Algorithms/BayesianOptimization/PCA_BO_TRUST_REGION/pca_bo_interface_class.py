@@ -179,11 +179,12 @@ class CleanPCABOWithLogging(CleanPCABO):
 
     def iteration(self):
         self.iterations.append(IterationData())
+        self.iterations[-1].bounds = self.bounds
+
         super().iteration()
 
         self.iterations[-1].points_x = self.X
         self.iterations[-1].points_y = self.fX
-        self.iterations[-1].bounds = self.bounds
 
         with open(examplePath, 'wb') as f:
             pickle.dump(self, f)
