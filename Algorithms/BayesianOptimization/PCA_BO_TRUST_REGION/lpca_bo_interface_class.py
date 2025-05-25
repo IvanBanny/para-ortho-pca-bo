@@ -120,8 +120,8 @@ class CleanLPCABOWithLogging(CleanLPCABO):
 
         assert z_bounds.shape == (2, 1), z_bounds.shape
 
-        plot_z_lb = np.min(points_z)
-        plot_z_ub = np.max(points_z)
+        plot_z_lb = z_bounds[0, :]
+        plot_z_ub = z_bounds[1, :]
 
         iteration = self.iterations[-1]
         iteration.gpr_x = np.linspace(plot_z_lb, plot_z_ub, 100).reshape(-1, 1)  # 100 evenly spaced points in the 1 dimensional reduced space
@@ -167,11 +167,13 @@ class CleanLPCABOWithLogging(CleanLPCABO):
 
     def iteration(self):
         self.iterations.append(IterationData())
+
+        self.iterations[-1].bounds = self.return_tr_bounds()
+
         super().iteration()
 
         self.iterations[-1].points_x = self.X
         self.iterations[-1].points_y = self.fX
-        self.iterations[-1].bounds = self.return_tr_bounds()
 
         with open(examplePath, 'wb') as f:
             pickle.dump(self, f)

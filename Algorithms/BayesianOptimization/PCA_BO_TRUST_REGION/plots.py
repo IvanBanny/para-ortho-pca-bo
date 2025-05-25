@@ -3,7 +3,7 @@ from typing import Tuple
 import numpy as np
 
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo_interface_class import CleanLPCABOWithLogging
-from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import MyPCA
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import MyPCA, calculate_reduced_space_bounds
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import CleanPCABOWithLogging
 
 
@@ -31,10 +31,6 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
     # Global x and y bounds
     x_min, x_max = pcabo.bounds[0, 0], pcabo.bounds[0, 1]
     y_min, y_max = pcabo.bounds[1, 0], pcabo.bounds[1, 1]
-
-    # Create mesh grid for plotting
-    x = np.linspace(x_min, x_max, 100)
-    y = np.linspace(y_min, y_max, 100)
 
     def create_objective_plot(i):
         """Create the objective function and search points plot"""
@@ -141,8 +137,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         ax.set_ylabel("Predicted Value", fontsize=12)
 
         i1, i2 = calculate_pc1_bounds_intersection(iteration_data.bounds, iteration_data.pca)
-        ax.vlines(i1, 0, 1, transform=ax.get_xaxis_transform())
-        ax.vlines(i2, 0, 1, transform=ax.get_xaxis_transform())
+        ax.vlines([i1, i2], 0, 1, transform=ax.get_xaxis_transform(), label="Intersection PC1 and Bounds")
 
         # Plot GP prediction if available
         if iteration_data.gpr_x is not None and iteration_data.gpr_y is not None and hasattr(iteration_data, 'gpr_std'):
@@ -193,8 +188,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         ax.set_ylabel("Acquisition Value", fontsize=12)
 
         i1, i2 = calculate_pc1_bounds_intersection(iteration_data.bounds, iteration_data.pca)
-        ax.vlines(i1, 0, 1, transform=ax.get_xaxis_transform())
-        ax.vlines(i2, 0, 1, transform=ax.get_xaxis_transform())
+        ax.vlines([i1, i2], 0, 1, transform=ax.get_xaxis_transform(), label="Intersection PC1 and Bounds")
 
         # Plot acquisition function if available
         if iteration_data.acqf_x is not None and iteration_data.acqf_y is not None:
@@ -204,14 +198,11 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
             ax.plot(acqf_x_flat, iteration_data.acqf_y, 'g-', linewidth=2, label='Acquisition function')
 
 
-            # Mark the next selected point if possible
-            if i < len(pcabo.iterations) - 1 and iteration_data.pca is not None:
-                next_iteration = pcabo.iterations[i + 1]
-                latest_point_x = next_iteration.points_x[-1:]
-                latest_point_z = iteration_data.pca.transform_to_reduced(latest_point_x)
-                if latest_point_z.shape[1] > 0:
-                    ax.axvline(x=latest_point_z[0, 0], color='red', linestyle='--',
-                               linewidth=2, label='Next selected point')
+            latest_point_x = iteration_data.points_x[-1:]
+            latest_point_z = iteration_data.pca.transform_to_reduced(latest_point_x)
+            if latest_point_z.shape[1] > 0:
+                ax.axvline(x=latest_point_z[0, 0], color='red', linestyle='--',
+                           linewidth=2, label='selected point')
 
             # Add legend below the plot
             ax.legend(bbox_to_anchor=(0.5, -0.15), loc='upper center', ncol=2, fontsize=14)
@@ -331,6 +322,9 @@ def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[f
     x_min, x_max = bounds[0, 0], bounds[0, 1]
     y_min, y_max = bounds[1, 0], bounds[1, 1]
 
+    assert x_min < x_max
+    assert y_min < y_max
+
     # Get the PC1 direction vector and center point
     # We'll use the PCA's mean as a reference point on the line
     center_original = pca.transform_to_original(np.array([[0]]))  # Transform z=0 back to original space
@@ -353,11 +347,10 @@ def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[f
     intersection_params = []
 
     # Left boundary (x = x_min)
-    if abs(direction_x) > 1e-10:  # Avoid division by zero
+    if True:  # Avoid division by zero
         t = (x_min - center_x) / direction_x
         y_intersect = center_y + t * direction_y
-        if y_min <= y_intersect <= y_max:
-            intersection_params.append(t)
+        intersection_params.append(t)
 
     # Right boundary (x = x_max)
     if abs(direction_x) > 1e-10:

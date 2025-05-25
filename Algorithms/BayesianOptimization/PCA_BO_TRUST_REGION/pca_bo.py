@@ -232,7 +232,7 @@ class CleanPCABO:
             transform_to_reduced=lambda points_x_tensor: torch.from_numpy(
                 pca.transform_to_reduced(points_x_tensor.detach().numpy())
             ),
-            penalty_factor=1000
+            penalty_factor=1
         )
 
     def optimize_acquisition(self, pca: MyPCA, penalized_acquisition_function, z_bounds):
@@ -350,10 +350,29 @@ def calculate_weights(maximization: bool, points_y: np.ndarray) -> np.ndarray:
 
 
 def calculate_reduced_space_bounds(tr_bounds: np.ndarray, pca: MyPCA):
-    C = np.abs(tr_bounds[:, 0] - tr_bounds[:, 1]) / 2
-    radius = norm(tr_bounds[:, 0] - C)
+    assert tr_bounds.shape[1] == 2
+    lb = tr_bounds[:, 0]
+    ub = tr_bounds[:, 1]
+    assert np.all((ub - lb) > 0)
 
-    z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1)
+    C = np.abs(lb + ub) / 2
+    radius = norm(lb - C)
+
+    C_ = pca.transform_to_reduced(C.reshape(1, -1))
+
+    z_bounds = np.array([[-radius], [radius]]).repeat(pca.pca.components_.shape[0], axis=1) + C_
+
+    p1 = pca.transform_to_original(z_bounds[0, :])
+    p2 = pca.transform_to_original(z_bounds[1, :])
+
+    # Assert that p1 and p2 are outside the bounds in the original space
+    # A point is outside bounds if any coordinate is below lb or above ub
+    e = 1e-3
+    p1_outside = np.any(p1 < lb + e) or np.any(p1 > ub - e)
+    p2_outside = np.any(p2 < lb + e) or np.any(p2 > ub - e)
+
+    assert p1_outside, f"Point p1 {p1} should be outside bounds [{lb}, {ub}]"
+    assert p2_outside, f"Point p2 {p2} should be outside bounds [{lb}, {ub}]"
 
     return z_bounds
 
