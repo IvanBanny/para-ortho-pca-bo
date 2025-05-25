@@ -201,4 +201,4 @@ if __name__ == "__main__":
         print(len(loaded_data.iterations))
         print(loaded_data.X)
         from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.plots import plot2d
-        plot2d(loaded_data)
+        plot2d(loaded_data, "visualization_output_lpca")

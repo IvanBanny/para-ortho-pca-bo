@@ -6,15 +6,17 @@ from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo_interface_class
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import MyPCA, calculate_reduced_space_bounds, \
     calculate_weights
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import CleanPCABOWithLogging
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.plot_util import calculate_pc1_bounds_intersection
 
 
-def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
+def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder: str = "visualization_output"):
     """
     Generate a GIF visualization of the optimization process for a 2D problem.
     Creates four separate plots instead of subplots.
 
     Args:
         pcabo: CleanPCABOWithLogging object with optimization history
+        output_folder: Folder path where visualization outputs will be saved
     """
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
@@ -22,6 +24,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
     import os
     from PIL import Image
     import glob
+    import shutil
 
     # Check if the optimization was performed on a 2D problem
     if pcabo.bounds.shape[0] != 2:
@@ -29,7 +32,20 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         return
 
     # Create output directory if it doesn't exist
-    os.makedirs("visualization_output", exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Clean up previous frame directories to avoid mixing old and new frames
+    frame_dirs = [
+        os.path.join(output_folder, 'frames_objective'),
+        os.path.join(output_folder, 'frames_weighted_pca'),
+        os.path.join(output_folder, 'frames_gp'),
+        os.path.join(output_folder, 'frames_acquisition')
+    ]
+
+    for frame_dir in frame_dirs:
+        if os.path.exists(frame_dir):
+            shutil.rmtree(frame_dir)
+        os.makedirs(frame_dir, exist_ok=True)
 
     # Global x and y bounds
     x_min, x_max = pcabo.bounds[0, 0], pcabo.bounds[0, 1]
@@ -37,7 +53,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
 
     def create_objective_plot(i):
         """Create the objective function and search points plot with zoomed-in version"""
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        # Make the zoomed plot smaller by adjusting the figure size ratio
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), gridspec_kw={'width_ratios': [3, 2]})
 
         iteration_data = pcabo.iterations[i] if i < len(pcabo.iterations) else pcabo.iterations[-1]
 
@@ -62,11 +79,11 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
             cbar1.ax.tick_params(labelsize=12)
             cbar1.set_label('Objective function value', fontsize=12)
 
-        # Right plot: Zoomed view
-        ax2.set_title(f"Objective Function & Search Points (Zoomed View)\nIteration {i + 1}/{len(pcabo.iterations)}",
-                      fontsize=14)
-        ax2.set_xlabel("x", fontsize=12)
-        ax2.set_ylabel("y", fontsize=12)
+        # Right plot: Zoomed view (smaller)
+        ax2.set_title(f"Zoomed View\nIteration {i + 1}/{len(pcabo.iterations)}",
+                      fontsize=12)
+        ax2.set_xlabel("x", fontsize=10)
+        ax2.set_ylabel("y", fontsize=10)
         ax2.set_aspect('equal', adjustable='box')
 
         # Set zoomed plot limits based on current iteration bounds
@@ -89,8 +106,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
             contour2 = ax2.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
                                     levels=50, cmap='plasma', alpha=0.7)
             cbar2 = plt.colorbar(contour2, ax=ax2, label='Objective function value')
-            cbar2.ax.tick_params(labelsize=12)
-            cbar2.set_label('Objective function value', fontsize=12)
+            cbar2.ax.tick_params(labelsize=10)
+            cbar2.set_label('Objective function value', fontsize=10)
 
         # Plot search points on both plots
         for ax in [ax1, ax2]:
@@ -146,8 +163,11 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
                              direction[0] * arrow_length, direction[1] * arrow_length,
                              head_width=0.1, head_length=0.2, fc='g', ec='g')
 
-            # Set tick label size
-            ax.tick_params(axis='both', which='major', labelsize=12)
+            # Set tick label size (smaller for zoomed plot)
+            if ax == ax1:
+                ax.tick_params(axis='both', which='major', labelsize=12)
+            else:
+                ax.tick_params(axis='both', which='major', labelsize=10)
 
         # Add legend below the plots (shared)
         if iteration_data.points_x is not None:
@@ -367,12 +387,12 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         df = pd.DataFrame(table_data)
 
         # Save to CSV
-        csv_filename = f'visualization_output/candidate_points_iteration_{i + 1:03d}.csv'
+        csv_filename = os.path.join(output_folder, f'candidate_points_iteration_{i + 1:03d}.csv')
         df.to_csv(csv_filename, index=True, float_format='%.6f')
 
         return csv_filename
 
-    def create_gif_from_frames(frame_dir, output_path, duration=500):
+    def create_gif_from_frames(frame_dir, output_path, duration=500, frame_files=None):
         """
         Create a GIF from PNG frames in a directory.
 
@@ -380,9 +400,11 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
             frame_dir: Directory containing frame PNG files
             output_path: Path for the output GIF file
             duration: Duration between frames in milliseconds
+            frame_files: Optional list of specific frame files to use (in order)
         """
-        # Get all PNG files and sort them
-        frame_files = sorted(glob.glob(os.path.join(frame_dir, "*.png")))
+        if frame_files is None:
+            # Get all PNG files and sort them
+            frame_files = sorted(glob.glob(os.path.join(frame_dir, "*.png")))
 
         if not frame_files:
             print(f"No PNG files found in {frame_dir}")
@@ -411,25 +433,25 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
 
     # Create and save objective function plot
     fig1 = create_objective_plot(final_iteration)
-    fig1.savefig('visualization_output/objective_function.png', dpi=300, bbox_inches='tight')
+    fig1.savefig(os.path.join(output_folder, 'objective_function.png'), dpi=300, bbox_inches='tight')
     plt.show()
     plt.close(fig1)
 
     # Create and save weighted PCA plot
     fig2 = create_weighted_pca_plot(final_iteration)
-    fig2.savefig('visualization_output/weighted_pca_transformation.png', dpi=300, bbox_inches='tight')
+    fig2.savefig(os.path.join(output_folder, 'weighted_pca_transformation.png'), dpi=300, bbox_inches='tight')
     plt.show()
     plt.close(fig2)
 
     # Create and save GP prediction plot
     fig3 = create_gp_plot(final_iteration)
-    fig3.savefig('visualization_output/gp_prediction.png', dpi=300, bbox_inches='tight')
+    fig3.savefig(os.path.join(output_folder, 'gp_prediction.png'), dpi=300, bbox_inches='tight')
     plt.show()
     plt.close(fig3)
 
     # Create and save acquisition function plot
     fig4 = create_acquisition_plot(final_iteration)
-    fig4.savefig('visualization_output/acquisition_function.png', dpi=300, bbox_inches='tight')
+    fig4.savefig(os.path.join(output_folder, 'acquisition_function.png'), dpi=300, bbox_inches='tight')
     plt.show()
     plt.close(fig4)
 
@@ -444,31 +466,41 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         frame_indices.append(len(pcabo.iterations) - 1)
 
     print("Creating individual frame images...")
-    os.makedirs('visualization_output/frames_objective', exist_ok=True)
-    os.makedirs('visualization_output/frames_weighted_pca', exist_ok=True)
-    os.makedirs('visualization_output/frames_gp', exist_ok=True)
-    os.makedirs('visualization_output/frames_acquisition', exist_ok=True)
+
+    # Keep track of generated frame files for each plot type
+    objective_frame_files = []
+    weighted_pca_frame_files = []
+    gp_frame_files = []
+    acquisition_frame_files = []
 
     for idx, frame_idx in enumerate(frame_indices):
         # Objective function frames
+        frame_filename = os.path.join(output_folder, 'frames_objective', f'frame_{idx:03d}.png')
         fig = create_objective_plot(frame_idx)
-        fig.savefig(f'visualization_output/frames_objective/frame_{idx:03d}.png', dpi=150, bbox_inches='tight')
+        fig.savefig(frame_filename, dpi=150, bbox_inches='tight')
         plt.close(fig)
+        objective_frame_files.append(frame_filename)
 
         # Weighted PCA frames
+        frame_filename = os.path.join(output_folder, 'frames_weighted_pca', f'frame_{idx:03d}.png')
         fig = create_weighted_pca_plot(frame_idx)
-        fig.savefig(f'visualization_output/frames_weighted_pca/frame_{idx:03d}.png', dpi=150, bbox_inches='tight')
+        fig.savefig(frame_filename, dpi=150, bbox_inches='tight')
         plt.close(fig)
+        weighted_pca_frame_files.append(frame_filename)
 
         # GP prediction frames
+        frame_filename = os.path.join(output_folder, 'frames_gp', f'frame_{idx:03d}.png')
         fig = create_gp_plot(frame_idx)
-        fig.savefig(f'visualization_output/frames_gp/frame_{idx:03d}.png', dpi=150, bbox_inches='tight')
+        fig.savefig(frame_filename, dpi=150, bbox_inches='tight')
         plt.close(fig)
+        gp_frame_files.append(frame_filename)
 
         # Acquisition function frames
+        frame_filename = os.path.join(output_folder, 'frames_acquisition', f'frame_{idx:03d}.png')
         fig = create_acquisition_plot(frame_idx)
-        fig.savefig(f'visualization_output/frames_acquisition/frame_{idx:03d}.png', dpi=150, bbox_inches='tight')
+        fig.savefig(frame_filename, dpi=150, bbox_inches='tight')
         plt.close(fig)
+        acquisition_frame_files.append(frame_filename)
 
         # Create candidate table for this frame
         csv_file = create_candidate_table(frame_idx)
@@ -477,48 +509,52 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
 
     print("Creating GIFs from frames...")
 
-    # Create GIFs from the frame sequences
+    # Create GIFs from the frame sequences using only the files generated in this run
     create_gif_from_frames(
-        'visualization_output/frames_objective',
-        'visualization_output/objective_function_animation.gif',
-        duration=800  # 800ms between frames
+        os.path.join(output_folder, 'frames_objective'),
+        os.path.join(output_folder, 'objective_function_animation.gif'),
+        duration=800,  # 800ms between frames
+        frame_files=objective_frame_files
     )
 
     create_gif_from_frames(
-        'visualization_output/frames_weighted_pca',
-        'visualization_output/weighted_pca_animation.gif',
-        duration=800
+        os.path.join(output_folder, 'frames_weighted_pca'),
+        os.path.join(output_folder, 'weighted_pca_animation.gif'),
+        duration=800,
+        frame_files=weighted_pca_frame_files
     )
 
     create_gif_from_frames(
-        'visualization_output/frames_gp',
-        'visualization_output/gp_prediction_animation.gif',
-        duration=800
+        os.path.join(output_folder, 'frames_gp'),
+        os.path.join(output_folder, 'gp_prediction_animation.gif'),
+        duration=800,
+        frame_files=gp_frame_files
     )
 
     create_gif_from_frames(
-        'visualization_output/frames_acquisition',
-        'visualization_output/acquisition_function_animation.gif',
-        duration=800
+        os.path.join(output_folder, 'frames_acquisition'),
+        os.path.join(output_folder, 'acquisition_function_animation.gif'),
+        duration=800,
+        frame_files=acquisition_frame_files
     )
 
     print(f"\nStatic plots saved:")
-    print(f"  - visualization_output/objective_function.png")
-    print(f"  - visualization_output/weighted_pca_transformation.png")
-    print(f"  - visualization_output/gp_prediction.png")
-    print(f"  - visualization_output/acquisition_function.png")
+    print(f"  - {os.path.join(output_folder, 'objective_function.png')}")
+    print(f"  - {os.path.join(output_folder, 'weighted_pca_transformation.png')}")
+    print(f"  - {os.path.join(output_folder, 'gp_prediction.png')}")
+    print(f"  - {os.path.join(output_folder, 'acquisition_function.png')}")
     if final_csv:
         print(f"  - {final_csv}")
     print(f"\nAnimated GIFs saved:")
-    print(f"  - visualization_output/objective_function_animation.gif")
-    print(f"  - visualization_output/weighted_pca_animation.gif")
-    print(f"  - visualization_output/gp_prediction_animation.gif")
-    print(f"  - visualization_output/acquisition_function_animation.gif")
+    print(f"  - {os.path.join(output_folder, 'objective_function_animation.gif')}")
+    print(f"  - {os.path.join(output_folder, 'weighted_pca_animation.gif')}")
+    print(f"  - {os.path.join(output_folder, 'gp_prediction_animation.gif')}")
+    print(f"  - {os.path.join(output_folder, 'acquisition_function_animation.gif')}")
     print(f"\nFrame sequences saved to:")
-    print(f"  - visualization_output/frames_objective/")
-    print(f"  - visualization_output/frames_weighted_pca/")
-    print(f"  - visualization_output/frames_gp/")
-    print(f"  - visualization_output/frames_acquisition/")
+    print(f"  - {os.path.join(output_folder, 'frames_objective/')}")
+    print(f"  - {os.path.join(output_folder, 'frames_weighted_pca/')}")
+    print(f"  - {os.path.join(output_folder, 'frames_gp/')}")
+    print(f"  - {os.path.join(output_folder, 'frames_acquisition/')}")
     print(f"\nCandidate points tables saved for each iteration in CSV format")
 
     # Print optimization results
@@ -527,91 +563,3 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
     print(f"Best point found: {pcabo.X[best_idx]}")
     print(f"Best value: {pcabo.fX[best_idx]}")
     print(f"Total evaluations: {len(pcabo.X)}")
-
-
-def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[float, float]:
-    """
-    Calculate the intersection points of the PC1 line with the rectangular bounds.
-
-    Args:
-        bounds: 2D array of shape (2, 2) where bounds[0] = [x_min, x_max] and bounds[1] = [y_min, y_max]
-        pca: PCA object with transform_to_reduced and transform_to_original methods
-
-    Returns:
-        Tuple of (z_min, z_max) representing the intersection points in PC1 space
-    """
-
-    # Extract bounds
-    x_min, x_max = bounds[0, 0], bounds[0, 1]
-    y_min, y_max = bounds[1, 0], bounds[1, 1]
-
-    assert x_min < x_max
-    assert y_min < y_max
-
-    # Get the PC1 direction vector and center point
-    # We'll use the PCA's mean as a reference point on the line
-    center_original = pca.transform_to_original(np.array([[0]]))  # Transform z=0 back to original space
-    center_x, center_y = center_original[0, 0], center_original[0, 1]
-
-    # Get another point on the PC1 line to determine direction
-    unit_point_original = pca.transform_to_original(np.array([[1]]))  # Transform z=1 back to original space
-    direction_x = unit_point_original[0, 0] - center_x
-    direction_y = unit_point_original[0, 1] - center_y
-
-    # Normalize direction vector
-    direction_norm = np.sqrt(direction_x ** 2 + direction_y ** 2)
-    if direction_norm == 0:
-        raise ValueError("PC1 direction vector has zero length")
-
-    direction_x /= direction_norm
-    direction_y /= direction_norm
-
-    # Find intersections with each boundary line
-    intersection_params = []
-
-    # Left boundary (x = x_min)
-    if True:  # Avoid division by zero
-        t = (x_min - center_x) / direction_x
-        y_intersect = center_y + t * direction_y
-        intersection_params.append(t)
-
-    # Right boundary (x = x_max)
-    if abs(direction_x) > 1e-10:
-        t = (x_max - center_x) / direction_x
-        y_intersect = center_y + t * direction_y
-        intersection_params.append(t)
-
-    # Bottom boundary (y = y_min)
-    if abs(direction_y) > 1e-10:  # Avoid division by zero
-        t = (y_min - center_y) / direction_y
-        x_intersect = center_x + t * direction_x
-        intersection_params.append(t)
-
-    # Top boundary (y = y_max)
-    if abs(direction_y) > 1e-10:
-        t = (y_max - center_y) / direction_y
-        x_intersect = center_x + t * direction_x
-        intersection_params.append(t)
-
-    if len(intersection_params) < 2:
-        raise ValueError(f"Found only {len(intersection_params)} intersection points, expected 2")
-
-    # Remove duplicates and sort
-    intersection_params = sorted(list(intersection_params))
-
-    if len(intersection_params) < 2:
-        raise ValueError("After removing duplicates, found less than 2 intersection points")
-
-    # Take the two extreme intersection points
-    t_min, t_max = intersection_params[1], intersection_params[2]
-
-    # Convert parametric distances to PC1 coordinates
-    # Since we normalized the direction vector, t represents the actual distance
-    # We need to convert this back to PC1 space
-    point_min_original = np.array([[center_x + t_min * direction_x, center_y + t_min * direction_y]])
-    point_max_original = np.array([[center_x + t_max * direction_x, center_y + t_max * direction_y]])
-
-    z_min = pca.transform_to_reduced(point_min_original)[0, 0]
-    z_max = pca.transform_to_reduced(point_max_original)[0, 0]
-
-    return float(z_min), float(z_max)
