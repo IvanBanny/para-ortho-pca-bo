@@ -169,6 +169,7 @@ class CleanLPCABOWithLogging(CleanLPCABO):
         self.iterations.append(IterationData())
 
         self.iterations[-1].bounds = self.return_tr_bounds()
+        self.iterations[-1].pca_points_mask = self.filter_points()
 
         super().iteration()
 

@@ -85,6 +85,8 @@ class IterationData:
     points_y: Optional[np.ndarray] = None
     bounds: Optional[np.ndarray] = None
 
+    pca_points_mask: Optional[np.ndarray] = None
+
     gpr_y: Optional[np.ndarray] = None
     gpr_std: Optional[np.ndarray] = None
     gpr_x: Optional[np.ndarray] = None
