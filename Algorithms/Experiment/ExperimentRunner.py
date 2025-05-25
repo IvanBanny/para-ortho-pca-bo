@@ -9,7 +9,6 @@ import os
 from time import time
 from tqdm.auto import tqdm
 from numpy.linalg import norm
-import torch
 
 from ioh.iohcpp.suite import BBOB
 from ioh.iohcpp.logger import Analyzer
@@ -22,11 +21,12 @@ from Algorithms import PCA_BO
 
 
 class ExperimentRunner:
-    """Class to run and manage experiments comparing Vanilla BO and PCA-BO algorithms."""
+    """Class to run and manage experiments comparing Vanilla BO, PCA-BO, and O-PCA-BO algorithms."""
 
     def __init__(
         self,
         algorithms: List[str],
+        batch_sizes: List[int],
         dimensions: List[int],
         problem_ids: List[int],
         num_runs: int = 30,
@@ -34,16 +34,14 @@ class ExperimentRunner:
         doe_factor: float = 3.0,
         root_dir: str = os.getcwd(),
         experiment_name: str = "experiment",
-        acquisition_function: str = "expected_improvement",
-        pca_components: Optional[int] = None,
-        var_threshold: float = 0.95,
         torch_config: Optional[Dict[str, Any]] = None,
         verbose: bool = False
     ):
         """Initialize the experiment runner with configuration parameters.
 
         Args:
-            algorithms: List of algorithm codenames to test. (pca || vanilla)
+            algorithms: List of algorithm codenames to test. (opca || pca || vanilla)
+            batch_sizes: List of batch sizes (q * ortho_samples) to test.
             dimensions: List of problem dimensions to test.
             problem_ids: List of BBOB problems IDs to test.
             num_runs: Number of runs per problem and dimension combination.
@@ -51,9 +49,6 @@ class ExperimentRunner:
             doe_factor: Factor to determine initial design of experiments size (n_DoE = doe_factor * dim).
             root_dir: Root directory for experiment output dir.
             experiment_name: Name of the experiment dir.
-            acquisition_function: Name of the acquisition function to use.
-            pca_components: Number of PCA components to use (None for automatic).
-            var_threshold: Variance threshold for PCA component selection.
             torch_config: gpu configuration.
             verbose: Whether to print detailed progress information.
         """
@@ -65,9 +60,6 @@ class ExperimentRunner:
         self.doe_factor = doe_factor
         self.root_dir = root_dir
         self.experiment_name = experiment_name
-        self.acquisition_function = acquisition_function
-        self.pca_components = pca_components
-        self.var_threshold = var_threshold
         self.torch_config = torch_config
         self.verbose = verbose
 

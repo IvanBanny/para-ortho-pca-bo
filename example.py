@@ -33,16 +33,16 @@ config = ExperimentConfig(
     algorithm_variant="pcabo",  # vanilla / pcabo
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
-    dimensions=2,
+    dimensions=40,
     problem_id=20,
     instance=0,
-    budget=25,
-    n_doe=15,
+    budget=450,
+    n_doe=45,
     q=1,
     ortho_samples=2,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
-    n_components=1,
+    n_components=0,
     var_threshold=0.95
 )
 
@@ -65,8 +65,8 @@ if config.algorithm_variant == "vanilla":
         random_seed=config.random_seed,
         maximization=False,
         verbose=True,
-        visualize=True,
-        vis_output_dir="./test",
+        # visualize=True,
+        # vis_output_dir="./test",
         DoE_parameters=config.doe_params
     )
 else:
@@ -81,9 +81,9 @@ else:
         random_seed=config.random_seed,
         maximization=False,
         verbose=True,
-        visualize=True,
-        vis_output_dir="./test",
-        save_logs=True,
+        # visualize=True,
+        # vis_output_dir="./test",
+        # save_logs=True,
         DoE_parameters=config.doe_params
     )
 

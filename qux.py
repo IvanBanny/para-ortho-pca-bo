@@ -23,6 +23,7 @@ class ExperimentConfig:
     instance: int
     budget: int
     n_doe: int
+    q: int
     ortho_samples: int
     random_seed: int
     doe_params: dict
@@ -45,23 +46,26 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
         store_positions=True
     )
 
-    if config.algorithm_variant == 'vanilla':
+    if config.algorithm_variant == "vanilla":
         optimizer = Vanilla_BO(
             budget=config.budget,
             n_DoE=config.n_doe,
+            q=config.q,
             acquisition_function=config.acquisition_function,
             random_seed=process_seed,
             maximization=False,
             verbose=True,
+            visualize=True,
             DoE_parameters=config.doe_params
         )
     else:
         optimizer = PCA_BO(
             budget=config.budget,
             n_DoE=config.n_doe,
+            q=config.q,
             n_components=config.n_components,
             var_threshold=config.var_threshold,
-            ortho_samples=2,
+            ortho_samples=config.ortho_samples,
             acquisition_function=config.acquisition_function,
             random_seed=process_seed,
             maximization=False,
@@ -70,7 +74,6 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
             save_logs=True,
             DoE_parameters=config.doe_params
         )
-
     problem = get_problem(
         pid,
         instance=config.instance,
@@ -80,7 +83,6 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
 
     optimizer(problem=problem)
 
-    # Uncomment if you need these metrics
     # print(f"Problem {pid} - Distance from optimum: {norm(problem.state.current_best.x-problem.optimum.x)}")
     # print(f"Problem {pid} - Regret: {problem.state.current_best.y - problem.optimum.y}")
 
@@ -96,6 +98,7 @@ config = ExperimentConfig(
     instance=0,
     budget=100,
     n_doe=20,
+    q=1,
     ortho_samples=2,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},

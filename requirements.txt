@@ -13,3 +13,4 @@ polars
 tqdm
 pillow
 wandb
+joblib

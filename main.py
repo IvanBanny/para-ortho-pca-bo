@@ -125,11 +125,8 @@ def main():
             "NUM_RESTARTS": 20,
             "RAW_SAMPLES": 1024,
             "OPTIMIZE_ACQF_OPTIONS": {
-                "batch_limit": 10,
-                "maxiter": 300,
-                "method": "L-BFGS-B",
-                "ftol": 1e-8,
-                "sequential": True
+                "maxiter": 100,
+                "method": "L-BFGS-B"
             }
         },
         verbose=args.verbose

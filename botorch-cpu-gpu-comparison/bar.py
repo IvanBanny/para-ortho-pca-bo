@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from gpytorch.mlls import ExactMarginalLogLikelihood
+from gpytorch.settings import memory_efficient
 
 from botorch.models import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
@@ -53,7 +54,8 @@ def main(budget=200, doe_num=30, dim=6, fid=19, instance=0, seed=69, if_gpu=True
         t0 = perf_counter()
         model = SingleTaskGP(train_x, train_obj).to(train_x)
         mll = ExactMarginalLogLikelihood(model.likelihood, model).to(train_x)
-        fit_gpytorch_mll(mll)
+        with memory_efficient(False):
+            fit_gpytorch_mll(mll)
         stats["gpr"].append(perf_counter() - t0)
 
         # Init and optimize acqf
@@ -66,13 +68,10 @@ def main(budget=200, doe_num=30, dim=6, fid=19, instance=0, seed=69, if_gpu=True
                 bounds=bounds,
                 q=1,
                 num_restarts=20,
-                raw_samples=1024,
+                raw_samples=4096,
                 options={
-                    "batch_limit": 10,
-                    "maxiter": 300,
-                    "method": "L-BFGS-B",
-                    "ftol": 1e-8,
-                    "sequential": True
+                    "maxiter": 100,
+                    "method": "L-BFGS-B"
                 }
             )
         else:
@@ -81,7 +80,7 @@ def main(budget=200, doe_num=30, dim=6, fid=19, instance=0, seed=69, if_gpu=True
                 bounds=bounds,
                 q=1,
                 num_restarts=20,
-                raw_samples=1024,
+                raw_samples=4096,
             )
             batch_candidates, batch_acq_values = gen_candidates_torch(
                 initial_conditions=batch_initial_conditions,

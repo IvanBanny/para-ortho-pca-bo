@@ -93,8 +93,8 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
             "dtype": torch.float,
             "NUM_RESTARTS": 20,
-            "RAW_SAMPLES": 1024,
-            "OPTIMIZE_ACQF_OPTIONS": {"batch_limit": 5, "maxiter": 200, "method": "L-BFGS-B"},
+            "RAW_SAMPLES": 4096,
+            "OPTIMIZE_ACQF_OPTIONS": {"maxiter": 100, "method": "L-BFGS-B"},
             **(torch_config or {})
         }
 

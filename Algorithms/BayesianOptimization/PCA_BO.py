@@ -120,8 +120,8 @@ class PCA_BO(AbstractBayesianOptimizer):
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
             "dtype": torch.float,
             "NUM_RESTARTS": 20,
-            "RAW_SAMPLES": 1024,
-            "OPTIMIZE_ACQF_OPTIONS": {"batch_limit": 5, "maxiter": 200, "method": "L-BFGS-B"},
+            "RAW_SAMPLES": 4096,
+            "OPTIMIZE_ACQF_OPTIONS": {"maxiter": 100, "method": "L-BFGS-B"},
             **(torch_config or {})
         }
 
@@ -222,7 +222,7 @@ class PCA_BO(AbstractBayesianOptimizer):
             outside_bounds = ~(new_x >= bounds_torch[0]).all(dim=1) | ~(new_x <= bounds_torch[1]).all(dim=1)
 
             if not (~outside_bounds).all().item() and self.verbose:
-                print(f"Warning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
+                print(f"\nWarning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
 
             new_f = self.problem(new_x)
 
@@ -357,8 +357,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         weights = self._calculate_weights()
 
         # Apply the weights
-        # Note: applying a square root here, which makes more sense, but isn't mentioned in the original paper
-        x_weighted = x_centered * torch.sqrt(weights)
+        x_weighted = x_centered * weights
 
         # Add a small amount of noise to avoid numerical issues
         noise = torch.normal(0, 1e-8, size=x_weighted.shape)
@@ -369,7 +368,7 @@ class PCA_BO(AbstractBayesianOptimizer):
         x_weighted_centered = x_weighted - self.pca_mean
 
         # Apply SVD
-        _, S, self.component_matrix = torch.linalg.svd(x_weighted_centered, full_matrices=False)
+        _, S, self.component_matrix = torch.linalg.svd(x_weighted_centered, full_matrices=True)
 
         explained_variance = (S ** 2) / (x_weighted.shape[0] - 1)
         self.explained_variance_ratio = explained_variance / torch.sum(explained_variance)
@@ -573,9 +572,9 @@ class PCA_BO(AbstractBayesianOptimizer):
 
             ortho_part = ortho_lin_comb @ self.component_matrix[self.reduced_space_dim:]
 
-            # Select self.ortho_samples weighted by the proximity to center
-            weights = torch.exp(-torch.norm(ortho_part, dim=1) ** 2 / (2 * 0.2**2))
-            ortho_part = ortho_part[torch.multinomial(weights, self.ortho_samples, replacement=False)]
+            # Select self.ortho_samples closest to [0]*d
+            _, ind = torch.topk(torch.norm(ortho_part, dim=1), self.ortho_samples, largest=False)
+            ortho_part = ortho_part[ind]
 
             new_x = torch.cat([new_x, candidate.unsqueeze(0),
                                candidate + ortho_part])
