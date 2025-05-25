@@ -137,8 +137,11 @@ class CleanPCABOWithLogging(CleanPCABO):
 
         assert z_bounds.shape == (2, 1), z_bounds.shape
 
+        plot_z_lb = z_bounds[0, :]
+        plot_z_ub = z_bounds[1, :]
+
         iteration = self.iterations[-1]
-        iteration.gpr_x = np.linspace(z_bounds[0, 0], z_bounds[1, 0], 100).reshape(-1, 1)  # 100 evenly spaced points in the 1 dimensional reduced space
+        iteration.gpr_x = np.linspace(plot_z_lb, plot_z_ub, 100).reshape(-1, 1)  # 100 evenly spaced points in the 1 dimensional reduced space
 
         # Predict the mean and variance of the gpr model at the 100 evenly spaced points
         with torch.no_grad():

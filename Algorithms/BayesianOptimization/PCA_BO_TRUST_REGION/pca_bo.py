@@ -355,7 +355,7 @@ def calculate_reduced_space_bounds(tr_bounds: np.ndarray, pca: MyPCA):
     ub = tr_bounds[:, 1]
     assert np.all((ub - lb) > 0)
 
-    C = np.abs(lb + ub) / 2
+    C = (lb + ub) / 2
     radius = norm(lb - C)
 
     C_ = pca.transform_to_reduced(C.reshape(1, -1))

@@ -36,98 +36,128 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
     y_min, y_max = pcabo.bounds[1, 0], pcabo.bounds[1, 1]
 
     def create_objective_plot(i):
-        """Create the objective function and search points plot"""
-        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        """Create the objective function and search points plot with zoomed-in version"""
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
 
         iteration_data = pcabo.iterations[i] if i < len(pcabo.iterations) else pcabo.iterations[-1]
 
+        # Left plot: Full view
         # Set plot limits with padding
         padding_x = 0.1 * (x_max - x_min)
         padding_y = 0.1 * (y_max - y_min)
-        ax.set_xlim(x_min - padding_x, x_max + padding_x)
-        ax.set_ylim(y_min - padding_y, y_max + padding_y)
+        ax1.set_xlim(x_min - padding_x, x_max + padding_x)
+        ax1.set_ylim(y_min - padding_y, y_max + padding_y)
 
-        ax.set_title(f"Objective Function & Search Points\nIteration {i + 1}/{len(pcabo.iterations)}", fontsize=14)
-        ax.set_xlabel("x", fontsize=12)
-        ax.set_ylabel("y", fontsize=12)
-        ax.set_aspect('equal', adjustable='box')
+        ax1.set_title(f"Objective Function & Search Points (Full View)\nIteration {i + 1}/{len(pcabo.iterations)}",
+                      fontsize=14)
+        ax1.set_xlabel("x", fontsize=12)
+        ax1.set_ylabel("y", fontsize=12)
+        ax1.set_aspect('equal', adjustable='box')
 
-        # Plot objective function contour
+        # Plot objective function contour on left plot
         if pcabo.plot_Z is not None:
-            contour = ax.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
-                                  levels=50, cmap='plasma', alpha=0.7)
-            cbar = plt.colorbar(contour, ax=ax, label='Objective function value')
-            cbar.ax.tick_params(labelsize=14)
-            cbar.set_label('Objective function value', fontsize=14)
+            contour1 = ax1.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
+                                    levels=50, cmap='plasma', alpha=0.7)
+            cbar1 = plt.colorbar(contour1, ax=ax1, label='Objective function value')
+            cbar1.ax.tick_params(labelsize=12)
+            cbar1.set_label('Objective function value', fontsize=12)
 
-        # Plot search points until current iteration
+        # Right plot: Zoomed view
+        ax2.set_title(f"Objective Function & Search Points (Zoomed View)\nIteration {i + 1}/{len(pcabo.iterations)}",
+                      fontsize=14)
+        ax2.set_xlabel("x", fontsize=12)
+        ax2.set_ylabel("y", fontsize=12)
+        ax2.set_aspect('equal', adjustable='box')
+
+        # Set zoomed plot limits based on current iteration bounds
+        if iteration_data.bounds is not None:
+            local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
+            local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
+
+            # Add small padding for zoomed view
+            zoom_padding_x = 0.05 * (local_x_max - local_x_min)
+            zoom_padding_y = 0.05 * (local_y_max - local_y_min)
+            ax2.set_xlim(local_x_min - zoom_padding_x, local_x_max + zoom_padding_x)
+            ax2.set_ylim(local_y_min - zoom_padding_y, local_y_max + zoom_padding_y)
+        else:
+            # Fallback to full bounds if no local bounds available
+            ax2.set_xlim(x_min - padding_x, x_max + padding_x)
+            ax2.set_ylim(y_min - padding_y, y_max + padding_y)
+
+        # Plot objective function contour on right plot (zoomed)
+        if pcabo.plot_Z is not None:
+            contour2 = ax2.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
+                                    levels=50, cmap='plasma', alpha=0.7)
+            cbar2 = plt.colorbar(contour2, ax=ax2, label='Objective function value')
+            cbar2.ax.tick_params(labelsize=12)
+            cbar2.set_label('Objective function value', fontsize=12)
+
+        # Plot search points on both plots
+        for ax in [ax1, ax2]:
+            if iteration_data.points_x is not None:
+                points_x = iteration_data.points_x[:, 0]
+                points_y = iteration_data.points_x[:, 1]
+
+                # Highlight the global optimum
+                ax.scatter(pcabo.global_optimum_x[0], pcabo.global_optimum_x[1], color='gray', marker='*', s=400,
+                           label='Global Optimum')
+
+                # Plot all points in black first
+                ax.scatter(points_x, points_y, color='black', marker='o', s=50, alpha=0.5, label='Search points')
+
+                # Highlight the most recent point
+                ax.scatter(points_x[-1], points_y[-1], color='red', marker='*', s=400, label='Latest point')
+
+                # Add best point found so far
+                if len(points_x) > 0:
+                    best_idx = np.argmin(iteration_data.points_y) if not pcabo.maximization else np.argmax(
+                        iteration_data.points_y)
+                    ax.scatter(points_x[best_idx], points_y[best_idx], color='orange', marker='X', s=150,
+                               label='Best point')
+
+                # Plot trust region bounds if available
+                if iteration_data.bounds is not None:
+                    local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
+                    local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
+
+                    rect = patches.Rectangle((local_x_min, local_y_min),
+                                             local_x_max - local_x_min,
+                                             local_y_max - local_y_min,
+                                             linewidth=2, edgecolor='r', facecolor='none',
+                                             label='Bounds')
+                    ax.add_patch(rect)
+
+                # Add PC1 component visualization if PCA is available
+                if iteration_data.pca is not None:
+                    # Calculate endpoints of PC1 in original space
+                    z_bounds = calculate_reduced_space_bounds(iteration_data.bounds, iteration_data.pca)
+                    pc1_pos = iteration_data.pca.transform_to_original(z_bounds[0].reshape(1, 1))
+                    pc1_neg = iteration_data.pca.transform_to_original(z_bounds[1].reshape(1, 1))
+
+                    # Plot PC1 as a line
+                    ax.plot([pc1_neg[0, 0], pc1_pos[0, 0]], [pc1_neg[0, 1], pc1_pos[0, 1]],
+                            'orange', linewidth=3, label='PC1 Component')
+
+                    # Add an arrow to indicate direction
+                    mid_point = (pc1_neg[0] + pc1_pos[0]) / 2
+                    direction = (pc1_pos[0] - pc1_neg[0]) / np.linalg.norm(pc1_pos[0] - pc1_neg[0])
+                    arrow_length = np.linalg.norm(pc1_pos[0] - pc1_neg[0]) * 0.1
+                    ax.arrow(mid_point[0], mid_point[1],
+                             direction[0] * arrow_length, direction[1] * arrow_length,
+                             head_width=0.1, head_length=0.2, fc='g', ec='g')
+
+            # Set tick label size
+            ax.tick_params(axis='both', which='major', labelsize=12)
+
+        # Add legend below the plots (shared)
         if iteration_data.points_x is not None:
-            points_x = iteration_data.points_x[:, 0]
-            points_y = iteration_data.points_x[:, 1]
-
-            # Highlight the global optimum
-            ax.scatter(pcabo.global_optimum_x[0], pcabo.global_optimum_x[1], color='gray', marker='*', s=400,
-                       label='Global Optimum')
-
-            # Plot all points in black first
-            ax.scatter(points_x, points_y, color='black', marker='o', s=50, alpha=0.5, label='Search points')
-
-            # Highlight the most recent point
-            ax.scatter(points_x[-1], points_y[-1], color='red', marker='*', s=400, label='Latest point')
-
-            # Add best point found so far
-            if len(points_x) > 0:
-                best_idx = np.argmin(iteration_data.points_y) if not pcabo.maximization else np.argmax(
-                    iteration_data.points_y)
-                ax.scatter(points_x[best_idx], points_y[best_idx], color='orange', marker='X', s=150,
-                           label='Best point')
-
-            # Plot trust region bounds if available
-            if iteration_data.bounds is not None:
-                local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
-                local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
-
-                rect = patches.Rectangle((local_x_min, local_y_min),
-                                         local_x_max - local_x_min,
-                                         local_y_max - local_y_min,
-                                         linewidth=2, edgecolor='r', facecolor='none',
-                                         label='Bounds')
-                ax.add_patch(rect)
-
-            # Add PC1 component visualization if PCA is available
-            if iteration_data.pca is not None:
-                # Calculate endpoints of PC1 in original space
-                z_bounds = calculate_reduced_space_bounds(iteration_data.bounds, iteration_data.pca)
-                pc1_pos = iteration_data.pca.transform_to_original(z_bounds[0].reshape(1, 1))
-                pc1_neg = iteration_data.pca.transform_to_original(z_bounds[1].reshape(1, 1))
-
-                # Plot PC1 as a line
-                ax.plot([pc1_neg[0, 0], pc1_pos[0, 0]], [pc1_neg[0, 1], pc1_pos[0, 1]],
-                        'orange', linewidth=3, label='PC1 Component')
-
-                # Add an arrow to indicate direction
-                mid_point = (pc1_neg[0] + pc1_pos[0]) / 2
-                direction = (pc1_pos[0] - pc1_neg[0]) / np.linalg.norm(pc1_pos[0] - pc1_neg[0])
-                arrow_length = np.linalg.norm(pc1_pos[0] - pc1_neg[0]) * 0.1
-                ax.arrow(mid_point[0], mid_point[1],
-                         direction[0] * arrow_length, direction[1] * arrow_length,
-                         head_width=0.1, head_length=0.2, fc='g', ec='g')
-
-            # Add legend below the plot
-            handles, labels = ax.get_legend_handles_labels()
+            handles, labels = ax1.get_legend_handles_labels()
             if handles:
-                ax.legend(handles, labels, bbox_to_anchor=(0.5, -0.15), loc='upper center', ncol=3, fontsize=14)
-
-        # Set tick label size
-        ax.tick_params(axis='both', which='major', labelsize=14)
+                fig.legend(handles, labels, bbox_to_anchor=(0.5, -0.05), loc='upper center', ncol=3, fontsize=12)
 
         plt.tight_layout()
         # Adjust layout to accommodate legend below the plot
-        plt.subplots_adjust(bottom=0.2)
-        # Adjust layout to accommodate legend outside the plot
-        plt.subplots_adjust(right=0.75)
-        # Adjust layout to accommodate legend outside the plot
-        plt.subplots_adjust(right=0.75)
+        plt.subplots_adjust(bottom=0.15)
         return fig
 
     def create_weighted_pca_plot(i):
@@ -164,8 +194,9 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
         # Check if we have the necessary data
         if (iteration_data.points_x is not None and
                 iteration_data.pca is not None):
-            X = iteration_data.points_x[:-1] # do not include the last point, as it is the new point
-            mask = iteration_data.pca_points_mask if iteration_data.pca_points_mask is not None else np.full(len(X), True)
+            X = iteration_data.points_x[:-1]  # do not include the last point, as it is the new point
+            mask = iteration_data.pca_points_mask if iteration_data.pca_points_mask is not None else np.full(len(X),
+                                                                                                             True)
             X = X[mask]
             weights = calculate_weights(False, iteration_data.points_y[:-1][mask])
 
@@ -497,6 +528,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging):
     print(f"Best value: {pcabo.fX[best_idx]}")
     print(f"Total evaluations: {len(pcabo.X)}")
 
+
 def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[float, float]:
     """
     Calculate the intersection points of the PC1 line with the rectangular bounds.
@@ -527,7 +559,7 @@ def calculate_pc1_bounds_intersection(bounds: np.ndarray, pca: MyPCA) -> Tuple[f
     direction_y = unit_point_original[0, 1] - center_y
 
     # Normalize direction vector
-    direction_norm = np.sqrt(direction_x**2 + direction_y**2)
+    direction_norm = np.sqrt(direction_x ** 2 + direction_y ** 2)
     if direction_norm == 0:
         raise ValueError("PC1 direction vector has zero length")
 
