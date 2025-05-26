@@ -21,7 +21,7 @@ from sklearn.decomposition import PCA
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import LHS_sampler
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
-USE_CONSTRAINTS = False
+USE_CONSTRAINTS = True
 
 class DOE:
     def __init__(
@@ -221,7 +221,7 @@ class CleanPCABO:
         return self.bounds
 
     def create_penalized_acquisition(self, acquisition_function, gpr_model, pca):
-        if USE_CONSTRAINTS:
+        if USE_CONSTRAINTS and False:
             return acquisition_function
         return PenalizedAcqf(
             acquisition_function=acquisition_function,
@@ -232,7 +232,7 @@ class CleanPCABO:
             transform_to_reduced=lambda points_x_tensor: torch.from_numpy(
                 pca.transform_to_reduced(points_x_tensor.detach().numpy())
             ),
-            penalty_factor=1
+            penalty_factor=-10
         )
 
     def optimize_acquisition(self, pca: MyPCA, penalized_acquisition_function, z_bounds):
@@ -305,7 +305,11 @@ class CleanPCABO:
 
 
 
-    def eval_at(self, point_x: np.ndarray):
+    def eval_at(self, point_x: np.ndarray, check_tr_bounds: bool = True):
+        # if outside of problem bounds or outside of trust region bounds
+        if is_outside_bounds(point_x, self.bounds, 1e-5) or (check_tr_bounds and is_outside_bounds(point_x, self.return_tr_bounds(), 1e-5)):
+            raise "The Algorithm tried to sample a point outside the bounds, perhaps the penalization or the linear constraints of the optimization function are wrong!"
+
         value = self.problem(point_x)
 
         self.X = np.vstack((self.X, point_x))
@@ -375,6 +379,28 @@ def calculate_reduced_space_bounds(tr_bounds: np.ndarray, pca: MyPCA):
     assert p2_outside, f"Point p2 {p2} should be outside bounds [{lb}, {ub}]"
 
     return z_bounds
+
+
+def is_outside_bounds(point_x: np.ndarray, bounds: np.ndarray, tolerance: float = 0.0) -> bool:
+    """
+    Check if a point is outside the given bounds.
+
+    Args:
+        point_x: Point to check (shape: [n_dimensions])
+        bounds: Bounds array (shape: [n_dimensions, 2]) where bounds[:, 0] are lower bounds
+                and bounds[:, 1] are upper bounds
+        tolerance: Small tolerance value for numerical precision (default: 0.0)
+
+    Returns:
+        bool: True if point is outside bounds, False otherwise
+    """
+    assert point_x.shape == (bounds.shape[0],)
+    assert bounds.shape[1] == 2
+
+    lb = bounds[:, 0] - tolerance
+    ub = bounds[:, 1] + tolerance
+
+    return np.any(point_x < lb) or np.any(point_x > ub)
 
 
 class AcquisitionFunctionEnum(Enum):

@@ -18,7 +18,6 @@ from ioh.iohcpp.logger.trigger import ALWAYS
 # Import BO algorithms
 from Algorithms import Vanilla_BO
 from Algorithms import PCA_BO
-from Algorithms.BayesianOptimization.LPCA_BO.LPCA_BO import LPCA_BO
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo_interface_class import CleanLPCABOInterface
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import CleanPCABOInterface
 

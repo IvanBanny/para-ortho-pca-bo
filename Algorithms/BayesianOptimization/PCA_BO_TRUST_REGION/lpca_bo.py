@@ -1,3 +1,10 @@
+"""
+Author: Adela Greganova
+This file is a modified version of the pca_bo.py implementation that I made together with Ivan Banny.
+
+The trust region logic follows the implementation of https://github.com/uber-research/TuRBO/blob/master/turbo/turbo_1.py .
+
+"""
 import math
 
 import numpy
@@ -28,7 +35,8 @@ class CleanLPCABO(CleanPCABO):
         self.succtol = 3
         self.failtol = 3
         self.length = self.length_init
-        [self.eval_at(point) for point in self.doe.get_points(self.bounds)]
+
+        [self.eval_at(point, check_tr_bounds=False) for point in self.doe.get_points(self.bounds) if self.budget > self.function_evaluation_count]
 
     # OPTIMIZATION LOOP
     def optimize(self):
@@ -113,14 +121,15 @@ class CleanLPCABO(CleanPCABO):
     def update_trust_region(self):
         fX_next = self.fX[-1]
         # TODO consider self.maximization
-        if np.min(fX_next) < np.min(self.fX) - 1e-3 * math.fabs(np.min(self.fX)):
+        #improved value
+        if np.min(fX_next) < np.min(self.fX[:-1]) - 1e-3 * math.fabs(np.min(self.fX[:-1])):
             self.succcount += 1
             self.failcount = 0
             print("succcount", self.succcount)
         else:
             self.succcount = 0
             self.failcount += 1
-            print("failcount", self.succcount)
+            print("failcount", self.failcount)
 
         if self.succcount == self.succtol:  # Expand trust region
             print("expanding trust region")

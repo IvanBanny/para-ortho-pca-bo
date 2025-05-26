@@ -119,8 +119,8 @@ class CleanPCABOWithLogging(CleanPCABO):
             padding_x = 0.1 * (x_max - x_min)
             padding_y = 0.1 * (y_max - y_min)
 
-            x = np.linspace(x_min - padding_x, x_max + padding_x, 100)
-            y = np.linspace(y_min - padding_y, y_max + padding_y, 100)
+            x = np.linspace(x_min - padding_x, x_max + padding_x, 200)
+            y = np.linspace(y_min - padding_y, y_max + padding_y, 200)
             X_grid, Y_grid = np.meshgrid(x, y)
             XY = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
             Z = np.array([self.problem(point) for point in XY])

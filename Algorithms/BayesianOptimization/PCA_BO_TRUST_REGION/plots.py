@@ -71,6 +71,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
         ax1.set_ylabel("y", fontsize=12)
         ax1.set_aspect('equal', adjustable='box')
 
+        ax1.legend()
+
         # Plot objective function contour on left plot
         if pcabo.plot_Z is not None:
             contour1 = ax1.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
@@ -80,10 +82,10 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             cbar1.set_label('Objective function value', fontsize=12)
 
         # Right plot: Zoomed view (smaller)
-        ax2.set_title(f"Zoomed View\nIteration {i + 1}/{len(pcabo.iterations)}",
-                      fontsize=12)
-        ax2.set_xlabel("x", fontsize=10)
-        ax2.set_ylabel("y", fontsize=10)
+        ax2.set_title(f"Objective Function & Search Points (Zoomed View)\nIteration {i + 1}/{len(pcabo.iterations)}",
+                      fontsize=14)
+        ax2.set_xlabel("x", fontsize=12)
+        ax2.set_ylabel("y", fontsize=12)
         ax2.set_aspect('equal', adjustable='box')
 
         # Set zoomed plot limits based on current iteration bounds
@@ -92,8 +94,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
 
             # Add small padding for zoomed view
-            zoom_padding_x = 0.05 * (local_x_max - local_x_min)
-            zoom_padding_y = 0.05 * (local_y_max - local_y_min)
+            zoom_padding_x = 0.5 * (local_x_max - local_x_min)
+            zoom_padding_y = 0.5 * (local_y_max - local_y_min)
             ax2.set_xlim(local_x_min - zoom_padding_x, local_x_max + zoom_padding_x)
             ax2.set_ylim(local_y_min - zoom_padding_y, local_y_max + zoom_padding_y)
         else:
@@ -106,8 +108,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             contour2 = ax2.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
                                     levels=50, cmap='plasma', alpha=0.7)
             cbar2 = plt.colorbar(contour2, ax=ax2, label='Objective function value')
-            cbar2.ax.tick_params(labelsize=10)
-            cbar2.set_label('Objective function value', fontsize=10)
+            cbar2.ax.tick_params(labelsize=12)
+            cbar2.set_label('Objective function value', fontsize=12)
 
         # Plot search points on both plots
         for ax in [ax1, ax2]:
@@ -131,6 +133,16 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
                         iteration_data.points_y)
                     ax.scatter(points_x[best_idx], points_y[best_idx], color='orange', marker='X', s=150,
                                label='Best point')
+
+                if isinstance(pcabo, CleanLPCABOWithLogging):
+                    local_x_min, local_x_max = pcabo.bounds[0, 0], pcabo.bounds[0, 1]
+                    local_y_min, local_y_max = pcabo.bounds[1, 0], pcabo.bounds[1, 1]
+                    rect = patches.Rectangle((local_x_min, local_y_min),
+                                             local_x_max - local_x_min,
+                                             local_y_max - local_y_min,
+                                             linewidth=2, edgecolor='lightcyan', facecolor='none',
+                                             label='Problem Bounds')
+                    ax.add_patch(rect)
 
                 # Plot trust region bounds if available
                 if iteration_data.bounds is not None:
@@ -163,11 +175,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
                              direction[0] * arrow_length, direction[1] * arrow_length,
                              head_width=0.1, head_length=0.2, fc='g', ec='g')
 
-            # Set tick label size (smaller for zoomed plot)
-            if ax == ax1:
-                ax.tick_params(axis='both', which='major', labelsize=12)
-            else:
-                ax.tick_params(axis='both', which='major', labelsize=10)
+            # Set tick label size
+            ax.tick_params(axis='both', which='major', labelsize=12)
 
         # Add legend below the plots (shared)
         if iteration_data.points_x is not None:
