@@ -9,7 +9,6 @@ from typing import List, Optional, Dict, Any
 import os
 from time import perf_counter
 from tqdm.auto import tqdm
-from numpy.linalg import norm
 import joblib
 from joblib import Parallel, delayed
 
@@ -100,8 +99,6 @@ class ExperimentRunner:
         self.triggers = [ALWAYS]  # Log on every problem evaluation
         self.logger_properties = [RAWYBEST]  # Log best-so-far value
 
-        self.pbar_cnt = 0
-
         if self.instances is None:
             if self.num_runs is None:
                 raise ValueError("Either instances or num_runs must be provided")
@@ -111,6 +108,15 @@ class ExperimentRunner:
         self.doe_params = {"criterion": "center", "iterations": 1000}
 
     def run_experiment(self, algorithm, batch_size, dim, pid, instance):
+        """Run a single experiment with specified parameters.
+
+        Args:
+            algorithm: Algorithm name to use
+            batch_size: Batch size for the algorithm
+            dim: Problem dimension
+            pid: Problem ID
+            instance: Instance number
+        """
         # Get problem info
         suite = BBOB(problem_ids=[pid], dimensions=[dim], instances=[instance])
         problem = next(iter(suite))
@@ -118,106 +124,91 @@ class ExperimentRunner:
         budget = self.budget_factor * dim + 50
         n_doe = int(self.doe_factor * dim)
 
-        with tqdm(total=budget, position=self.pbar_cnt, desc="", leave=False) as pbar:
-            self.pbar_cnt += 1
+        if self.verbose:
+            print(f"\nRunning {algorithm} | {batch_size}-batch | {dim}-dim | F-{pid} | i-{instance}:\n")
 
-            pbar.set_description(f"{algorithm} | b{batch_size} | d{dim} | f{pid} | i{instance}")
+        # Setup logger
+        dump_path = os.path.join(self.root_dir, self.experiment_name)
+        os.makedirs(dump_path, exist_ok=True)
+        logger = Analyzer(
+            triggers=self.triggers,
+            root=dump_path,
+            folder_name=f"{algorithm}-b{batch_size}-d{dim}-p{pid}-i{instance}",
+            algorithm_name=algorithm,
+            algorithm_info=f"A {algorithm}-BO Implementation.",
+            additional_properties=self.logger_properties,
+            store_positions=True
+        )
 
-            if self.verbose:
-                pbar.write(f"\nRunning {algorithm} | {batch_size}-batch | {dim}-dim | F-{pid} | i-{instance}:\n")
+        # Add relevant shared experiment settings
+        logger.set_experiment_attributes({
+            "budget": f"{budget}",
+            "doe": f"{n_doe}",
+            "acquisition_function": f"{self.acquisition_function}",
+            "random_seed": f"{self.random_seed}",
+            "torch_config": f"{self.torch_config}",
+            "self.doe_params": f"{self.doe_params}",
+        })
 
-            # Setup logger
-            dump_path = os.path.join(self.root_dir, self.experiment_name)
-            os.makedirs(dump_path, exist_ok=True)
-            logger = Analyzer(
-                triggers=self.triggers,
-                root=dump_path,
-                folder_name=f"{algorithm}-b{batch_size}-d{dim}-p{pid}-i{instance}",
-                algorithm_name=algorithm,
-                algorithm_info=f"A {algorithm}-BO Implementation.",
-                additional_properties=self.logger_properties,
-                store_positions=True
-            )
+        match algorithm:
+            case "vanilla":
+                optimizer = Vanilla_BO(
+                    budget=budget,
+                    n_DoE=n_doe,
+                    q=batch_size,
+                    acquisition_function=self.acquisition_function,
+                    random_seed=self.random_seed,
+                    torch_config=self.torch_config,
+                    maximization=maximization,
+                    verbose=self.verbose,
+                    DoE_parameters=self.doe_params
+                )
+                logger.set_experiment_attributes({
+                    "q": f"{batch_size}",
+                })
+            case "pca" | "opca":
+                optimizer = O_PCA_BO(
+                    budget=budget,
+                    n_DoE=n_doe,
+                    q=(batch_size if algorithm == "pca" else 1),
+                    ortho_samples=(0 if algorithm == "pca" else batch_size),
+                    var_threshold=self.var_threshold,
+                    acquisition_function=self.acquisition_function,
+                    random_seed=self.random_seed,
+                    torch_config=self.torch_config,
+                    maximization=maximization,
+                    verbose=self.verbose,
+                    DoE_parameters=self.doe_params
+                )
+                logger.set_experiment_attributes({
+                    **({"q": f"{batch_size}"} if algorithm == "pca" else {}),
+                    **({"q": "1", "ortho_samples": f"{batch_size}"} if algorithm == "opca" else {}),
+                    "var_threshold": f"{self.var_threshold}"
+                })
+            case _:
+                raise ValueError(f"Invalid algorithm name: '{algorithm}'")
 
-            # Add relevant shared experiment settings
-            logger.set_experiment_attributes({
-                "budget": f"{budget}",
-                "doe": f"{n_doe}",
-                "acquisition_function": f"{self.acquisition_function}",
-                "random_seed": f"{self.random_seed}",
-                "torch_config": f"{self.torch_config}",
-                "self.doe_params": f"{self.doe_params}",
-            })
+        # Add profile timings to the run before attaching the problem
+        # ioh refuses to do it DURING the run OR in a loop
+        # because it is, permanently, a teapot
+        # seriously, I hate ioh.iohcpp.logger.Analyzer so much I spent like two full days on this.
+        # I've tried everything, trust me. It just contradicts itself in profoundly impressive ways
+        # I don't even know how could it possibly be written THIS bad
+        for time_profile in getattr(optimizer, "TIME_PROFILES", []):
+            logger.add_run_attribute(f"{time_profile}_time", 0.0)
 
-            match algorithm:
-                case "vanilla":
-                    optimizer = Vanilla_BO(
-                        budget=budget,
-                        n_DoE=n_doe,
-                        q=batch_size,
-                        acquisition_function=self.acquisition_function,
-                        random_seed=self.random_seed,
-                        torch_config=self.torch_config,
-                        maximization=maximization,
-                        verbose=self.verbose,
-                        DoE_parameters=self.doe_params,
-                        pbar=pbar
-                    )
-                    logger.set_experiment_attributes({
-                        "q": f"{batch_size}",
-                    })
-                case "pca" | "opca":
-                    optimizer = O_PCA_BO(
-                        budget=budget,
-                        n_DoE=n_doe,
-                        q=(batch_size if algorithm == "pca" else 1),
-                        ortho_samples=(0 if algorithm == "pca" else batch_size),
-                        var_threshold=self.var_threshold,
-                        acquisition_function=self.acquisition_function,
-                        random_seed=self.random_seed,
-                        torch_config=self.torch_config,
-                        maximization=maximization,
-                        verbose=self.verbose,
-                        DoE_parameters=self.doe_params,
-                        pbar=pbar
-                    )
-                    logger.set_experiment_attributes({
-                        **({"q": batch_size} if algorithm == "pca" else {}),
-                        **({"q": 1, "ortho_samples": batch_size} if algorithm == "opca" else {}),
-                        "var_threshold": f"{self.var_threshold}"
-                    })
-                case _:
-                    raise ValueError(f"Invalid algorithm name: '{algorithm}'")
+        logger.add_run_attribute("time", 0.0)
 
-            # Add profile timings to the run before attaching the problem
-            # ioh refuses to do it DURING the run OR in a loop
-            # because it is, permanently, a teapot
-            # seriously, I hate ioh.iohcpp.logger.Analyzer so much I spent like two full days on this.
-            # I've tried everything, trust me. It just contradicts itself in profoundly impressive ways
-            # I don't even know how could it possibly be written THIS bad
-            for time_profile in getattr(optimizer, "TIME_PROFILES", []):
-                logger.add_run_attribute(f"{time_profile}_time", 0.0)
+        suite.attach_logger(logger)
 
-            logger.add_run_attribute("time", 0.0)
+        # Run the optimization
+        start_time = perf_counter()
+        optimizer(problem=problem)
+        logger.set_run_attribute("time", perf_counter() - start_time)
 
-            suite.attach_logger(logger)
-
-            # Run the optimization
-            start_time = perf_counter()
-            optimizer(problem=problem)
-            logger.set_run_attribute("time", perf_counter() - start_time)
-
-            # Retrieve profiling data, Extract total function timings, Profit Operation
-            for time_profile, total_profile_time in optimizer.total_times.items():
-                logger.set_run_attribute(f"{time_profile}_time", total_profile_time)
-
-            if self.verbose:
-                pbar.write(f"The distance from optimum is: "
-                           f"{norm(problem.state.current_best.x - problem.optimum.x)}")
-                pbar.write(f"The regret is: {problem.state.current_best.y - problem.optimum.y}")
-
-            pbar.close()
-            self.pbar_cnt -= 1
+        # Retrieve profiling data, Extract total function timings, Profit Operation
+        for time_profile, total_profile_time in optimizer.total_times.items():
+            logger.set_run_attribute(f"{time_profile}_time", total_profile_time)
 
         # Detach logger from the suite and close logger
         suite.detach_logger()
@@ -248,12 +239,10 @@ class ExperimentRunner:
                            for a in self.algorithms for b in self.batch_sizes for d in self.dimensions
                            for p in self.problem_ids for i in self.instances]
 
-            with tqdm_joblib(tqdm(desc="Total Progress", total=total_runs)) as progress_bar:
-                self.pbar_cnt += 1
+            with tqdm_joblib(tqdm(desc="Total Progress", total=total_runs, position=0)) as progress_bar:
                 results = Parallel(n_jobs=-1, verbose=10)(
                     delayed(self.run_experiment)(**params)
                     for params in params_list
                 )
-                self.pbar_cnt -= 1
 
         print(results)

@@ -232,7 +232,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
             outside_bounds = ~(new_x >= bounds_torch[0]).all(dim=1) | ~(new_x <= bounds_torch[1]).all(dim=1)
 
-            if not (~outside_bounds).all().item():
+            if self.verbose and not (~outside_bounds).all().item():
                 print(f"\nWarning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
 
             new_f = self.problem(new_x)
@@ -513,13 +513,15 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         try:
             fit_gpytorch_mll(mll)
         except ModelFittingError:
-            print("\nWarning: standard fitting failed, trying alternative...\n")
+            if self.verbose:
+                print("\nWarning: standard fitting failed, trying alternative...\n")
             try:
                 # Try with more conservative settings
                 fit_gpytorch_mll(mll, options={"maxiter": 200, "lr": 0.01})
             except ModelFittingError:
                 # Last resort: use model with default hyperparameters
-                print("\nWarning: both GPR fitting attempts failed, using default hyperparameters\n")
+                if self.verbose:
+                    print("\nWarning: both GPR fitting attempts failed, using default hyperparameters\n")
 
         self.timing_logs["fit_gpytorch_mll"].append(perf_counter() - start_time)
 

@@ -47,8 +47,8 @@ def parse_arguments():
         "--problems",
         type=int,
         nargs="+",
-        default=[15, 16, 17],
-        help="BBOB problem IDs to test (default: 15 16 17)"
+        default=[15, 18, 20, 21],
+        help="BBOB problem IDs to test (default: 15, 18, 20, 21)"
     )
 
     parser.add_argument(
