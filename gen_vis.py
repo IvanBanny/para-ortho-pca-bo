@@ -11,20 +11,19 @@ from ioh.iohcpp.logger import Analyzer
 from ioh.iohcpp.logger.property import RAWYBEST
 from ioh.iohcpp.logger.trigger import ALWAYS
 
-from Algorithms import Vanilla_BO, PCA_BO
+from Algorithms import Vanilla_BO, O_PCA_BO
 
 
 @dataclass
 class ExperimentConfig:
-    algorithm_variant: str
+    algorithm: str
     acquisition_function: str
     dimensions: int
     problem_ids: List[int]
     instance: int
     budget: int
     n_doe: int
-    q: int
-    ortho_samples: int
+    batch_size: int
     random_seed: int
     doe_params: dict
     var_threshold: float
@@ -33,47 +32,51 @@ class ExperimentConfig:
 
 def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
     """Run optimization for a single problem."""
-    # Use different random seed for each process to ensure independence
-    process_seed = config.random_seed + pid
-
+    dump_path = os.path.join(os.getcwd(), "vis-logs")
+    os.makedirs(dump_path, exist_ok=True)
     logger = Analyzer(
         triggers=[ALWAYS],
-        root=os.path.join(os.getcwd(), "ioh-logs"),
-        folder_name="test",
-        algorithm_name=config.algorithm_variant,
-        algorithm_info=f"A {config.algorithm_variant}-BO Implementation.",
+        root=dump_path,
+        folder_name=f"{config.algorithm}-b{config.batch_size}-d{config.dimensions}-p{pid}-i{config.instance}",
+        algorithm_name=config.algorithm,
+        algorithm_info=f"A {config.algorithm}-BO Implementation.",
         additional_properties=[RAWYBEST],
         store_positions=True
     )
 
-    if config.algorithm_variant == "vanilla":
-        optimizer = Vanilla_BO(
-            budget=config.budget,
-            n_DoE=config.n_doe,
-            q=config.q,
-            acquisition_function=config.acquisition_function,
-            random_seed=process_seed,
-            maximization=False,
-            verbose=True,
-            visualize=True,
-            DoE_parameters=config.doe_params
-        )
-    else:
-        optimizer = PCA_BO(
-            budget=config.budget,
-            n_DoE=config.n_doe,
-            q=config.q,
-            n_components=config.n_components,
-            var_threshold=config.var_threshold,
-            ortho_samples=config.ortho_samples,
-            acquisition_function=config.acquisition_function,
-            random_seed=process_seed,
-            maximization=False,
-            verbose=True,
-            visualize=True,
-            save_logs=True,
-            DoE_parameters=config.doe_params
-        )
+    match config.algorithm:
+        case "vanilla":
+            optimizer = Vanilla_BO(
+                budget=config.budget,
+                n_DoE=config.n_doe,
+                q=config.batch_size,
+                acquisition_function=config.acquisition_function,
+                random_seed=config.random_seed,
+                maximization=False,
+                verbose=True,
+                visualize=True,
+                DoE_parameters=config.doe_params
+            )
+        case "pca" | "opca":
+            optimizer = O_PCA_BO(
+                budget=config.budget,
+                n_DoE=config.n_doe,
+                q=(config.batch_size if config.algorithm == "pca" else 1),
+                ortho_samples=(0 if config.algorithm == "pca" else config.batch_size),
+                n_components=config.n_components,
+                var_threshold=config.var_threshold,
+                acquisition_function=config.acquisition_function,
+                random_seed=config.random_seed,
+                maximization=False,
+                verbose=True,
+                visualize=True,
+                # save_logs=True,
+                # log_dir="vis-logs",
+                DoE_parameters=config.doe_params
+            )
+        case _:
+            raise ValueError(f"Invalid algorithm name: '{config.algorithm}'")
+
     problem = get_problem(
         pid,
         instance=config.instance,
@@ -90,16 +93,15 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
 
 
 config = ExperimentConfig(
-    algorithm_variant="pca",  # vanilla / pca
+    algorithm="opca",  # vanilla / pca / opca
     acquisition_function="expected_improvement",
     # expected_improvement, probability_of_improvement, upper_confidence_bound
     dimensions=2,
     problem_ids=list(range(15, 25)),
     instance=0,
-    budget=100,
+    budget=200,
     n_doe=20,
-    q=1,
-    ortho_samples=2,
+    batch_size=3,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,

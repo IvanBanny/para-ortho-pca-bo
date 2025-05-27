@@ -9,12 +9,14 @@ from torch import Tensor
 
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
-from botorch.acquisition.analytic import (
+from botorch.acquisition import (
+    AcquisitionFunction,
     LogExpectedImprovement,
     ProbabilityOfImprovement,
-    UpperConfidenceBound,
-    AnalyticAcquisitionFunction
+    qLogExpectedImprovement,
+    qProbabilityOfImprovement
 )
+from botorch.acquisition.objective import GenericMCObjective
 from botorch.optim import optimize_acqf
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.kernels import MaternKernel
@@ -28,23 +30,21 @@ from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBa
 from Algorithms.utils.vis_utils import PCABOVisualizer
 
 import warnings
-from botorch.exceptions.warnings import NumericsWarning, OptimizationWarning
+from botorch.exceptions.warnings import OptimizationWarning, BadInitialCandidatesWarning
 
-warnings.filterwarnings("ignore", category=NumericsWarning)  # Filter warnings from EI
 warnings.filterwarnings("ignore", category=OptimizationWarning)
+warnings.filterwarnings("ignore", category=BadInitialCandidatesWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Constants for acquisition function names
 ALLOWED_ACQUISITION_FUNCTION_STRINGS = (
     "expected_improvement",
-    "probability_of_improvement",
-    "upper_confidence_bound"
+    "probability_of_improvement"
 )
 
 ALLOWED_SHORTHAND_ACQUISITION_FUNCTION_STRINGS = {
     "EI": "expected_improvement",
-    "PI": "probability_of_improvement",
-    "UCB": "upper_confidence_bound"
+    "PI": "probability_of_improvement"
 }
 
 
@@ -162,9 +162,10 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             self.x_evals = np.concatenate([self.x_evals, new_x])
             self.f_evals = np.concatenate([self.f_evals, new_f])
 
-            print(f"\nSampled:\n"
-                  f"    x: {new_x}\n"
-                  f"    f: {new_f}")
+            if self.verbose:
+                print(f"\nSampled:\n"
+                      f"    x: {new_x}\n"
+                      f"    f: {new_f}")
 
             if self._pbar is not None:
                 self._pbar.update(evals)
@@ -248,11 +249,17 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         Returns:
             Tensor: `batch_shape x r`-dim Tensor - new candidate points in the reduced space.
         """
+        objective = None
+        if self.q > 1 and not self.maximization:
+            def minimize_objective(samples, X=None):
+                return -samples.squeeze(-1)
+            objective = GenericMCObjective(minimize_objective)
+
         # Set up the acquisition function
         self.acquisition_function = self.acquisition_function_class(
             model=self.__model_obj,
             best_f=self.current_best,
-            maximize=self.maximization
+            **({"maximize": self.maximization} if self.q == 1 else {"objective": objective})
         )
 
         # Optimize
@@ -261,9 +268,9 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             acq_function=self.acquisition_function,
             bounds=torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T,
             q=self.q,
-            num_restarts=self.__torch_config['NUM_RESTARTS'],
-            raw_samples=self.__torch_config['RAW_SAMPLES'],
-            options=self.__torch_config['OPTIMIZE_ACQF_OPTIONS'],
+            num_restarts=self.__torch_config["NUM_RESTARTS"],
+            raw_samples=self.__torch_config["RAW_SAMPLES"],
+            options=self.__torch_config["OPTIMIZE_ACQF_OPTIONS"],
         )
         self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
 
@@ -313,12 +320,18 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
     def set_acquisition_function_subclass(self) -> None:
         """Set the acquisition function subclass based on the name."""
-        if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-            self.__acqf_class = LogExpectedImprovement
-        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
-            self.__acqf_class = ProbabilityOfImprovement
-        elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[2]:
-            self.__acqf_class = UpperConfidenceBound
+        if self.q == 1:
+            # Use analytic acquisition functions for single point
+            if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
+                self.__acqf_class = LogExpectedImprovement
+            elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
+                self.__acqf_class = ProbabilityOfImprovement
+        else:
+            # Use batch acquisition functions for multiple points
+            if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
+                self.__acqf_class = qLogExpectedImprovement
+            elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
+                self.__acqf_class = qProbabilityOfImprovement
 
     @property
     def acquisition_function_class(self) -> Callable:
@@ -326,30 +339,30 @@ class Vanilla_BO(AbstractBayesianOptimizer):
         return self.__acqf_class
 
     @property
-    def acquisition_function(self) -> AnalyticAcquisitionFunction:
+    def acquisition_function(self) -> AcquisitionFunction:
         """Get the stored acquisition function defined at some point of the loop.
 
         Returns:
-            AnalyticAcquisitionFunction: The acquisition function.
+            AcquisitionFunction: The acquisition function.
         """
         return self.__acqf
 
     @acquisition_function.setter
-    def acquisition_function(self, new_acquisition_function: AnalyticAcquisitionFunction) -> None:
+    def acquisition_function(self, new_acquisition_function: AcquisitionFunction) -> None:
         """Set the acquisition function.
 
         Args:
-            new_acquisition_function (AnalyticAcquisitionFunction): The acquisition function.
+            new_acquisition_function (AcquisitionFunction): The acquisition function.
 
         Raises:
-            AttributeError: If the new acquisition function is not a subclass of AnalyticAcquisitionFunction.
+            AttributeError: If the new acquisition function is not a subclass of AcquisitionFunction.
         """
-        if issubclass(type(new_acquisition_function), AnalyticAcquisitionFunction):
+        if issubclass(type(new_acquisition_function), AcquisitionFunction):
             # Assign in this case
             self.__acqf = new_acquisition_function
         else:
             raise AttributeError(
-                "Acquisition function does not inherit from 'AnalyticAcquisitionFunction'",
+                "Acquisition function does not inherit from 'AcquisitionFunction'",
                 name="acquisition_function",
                 obj=self.__acqf
             )

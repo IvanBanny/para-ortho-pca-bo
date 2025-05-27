@@ -7,7 +7,7 @@ on benchmark functions from the BBOB suite.
 
 import os
 import argparse
-import time
+from time import perf_counter
 import torch
 
 from Algorithms import ExperimentRunner
@@ -17,6 +17,22 @@ def parse_arguments():
     """Parse command line arguments for experiment configuration."""
     parser = argparse.ArgumentParser(
         description="Run Bayesian Optimization comparison experiments."
+    )
+
+    parser.add_argument(
+        "--algorithms",
+        type=str,
+        nargs="+",
+        default=["vanilla", "pca", "opca"],
+        help="Algorithms to test (default: vanilla pca opca)"
+    )
+
+    parser.add_argument(
+        "--batch",
+        type=int,
+        nargs="+",
+        default=[1, 5],
+        help="Batch sizes to test (default: 1 5)"
     )
 
     parser.add_argument(
@@ -66,9 +82,9 @@ def parse_arguments():
     parser.add_argument(
         "--acquisition",
         type=str,
-        default="expected_improvement",
-        choices=["expected_improvement", "probability_of_improvement", "upper_confidence_bound"],
-        help="Acquisition function to use (default: expected_improvement)"
+        default="EI",
+        choices=["EI", "PI", "UCB"],
+        help="Acquisition function to use (default: EI)"
     )
 
     parser.add_argument(
@@ -99,41 +115,44 @@ def main():
 
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
-        args.dimensions = [5]  # Use only 5D
-        args.problems = [15, 20]  # Use only problems 15 and 20
-        args.runs = 30  # Just 30 runs
-        args.budget_factor = 5  # Small budget
-        args.doe_factor = 2.0  # Small DoE
+        args.algorithms = ["vanilla", "pca", "opca"]
+        args.batch = [1, 3]
+        args.dimensions = [10]
+        args.problems = [17, 20]
+        args.runs = 5
+        args.budget_factor = 5
+        args.doe_factor = 2.0
         print("\nRunning in quick test mode with minimal settings")
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
-        algorithms=["pca"],
+        algorithms=args.algorithms,
+        batch_sizes=args.batch,
         dimensions=args.dimensions,
         problem_ids=args.problems,
+        instances=None,
         num_runs=args.runs,
         budget_factor=args.budget_factor,
         doe_factor=args.doe_factor,
+        random_seed=69,
+        acquisition_function=args.acquisition,
+        var_threshold=args.var_threshold,
         root_dir=os.getcwd(),
         experiment_name=args.experiment_dir,
-        acquisition_function=args.acquisition,
-        pca_components=0,  # Automatic selection based on var_threshold
-        var_threshold=args.var_threshold,
         torch_config={
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
             "dtype": torch.float,
             "NUM_RESTARTS": 20,
-            "RAW_SAMPLES": 1024,
-            "OPTIMIZE_ACQF_OPTIONS": {
-                "maxiter": 100,
-                "method": "L-BFGS-B"
-            }
+            "RAW_SAMPLES": 4096,
+            "OPTIMIZE_ACQF_OPTIONS": {"maxiter": 100, "method": "L-BFGS-B"}
         },
         verbose=args.verbose
     )
 
     # Print experiment configuration
     print("\nBayesian Optimization Experiment Configuration:")
+    print(f"  Algorithms: {args.algorithms}")
+    print(f"  Batch sizes: {args.batch}")
     print(f"  Dimensions: {args.dimensions}")
     print(f"  Problems: {args.problems}")
     print(f"  Runs: {args.runs}")
@@ -146,9 +165,9 @@ def main():
     print("\nStarting experiment...\n")
 
     # Run the experiment with timing
-    start_time = time.time()
-    experiment.run_experiment()
-    total_time = time.time() - start_time
+    start_time = perf_counter()
+    experiment()
+    total_time = perf_counter() - start_time
 
     print(f"\nExperiment completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
     print(f"Results saved to {args.experiment_dir}")

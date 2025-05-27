@@ -23,7 +23,7 @@ para-ortho-pca-bo/
 |--- Algorithms/
 |   |--- BayesianOptimization/
 |   |   |--- AbstractBayesianOptimizer.py  # Base class for BO algorithms
-|   |   |--- PCA_BO.py                     # PCA-assisted BO implementation
+|   |   |--- O_PCA_BO.py                     # PCA-assisted BO implementation
 |   |   |--- Vanilla_BO.py                 # Standard BO implementation
 |   |--- Experiment/
 |   |   |--- ExperimentRunner.py           # Experiment framework
