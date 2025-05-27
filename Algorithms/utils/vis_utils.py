@@ -176,11 +176,15 @@ class PCABOVisualizer:
             pc1_lc.set_linewidth(2)
             ax.add_collection(pc1_lc)
 
+            if x_scaled is not None:
+                scaled_scatter = ax.scatter(x_scaled[:, 0], x_scaled[:, 1], c=-(f - f.min() + 1.0).log(),
+                                            cmap="viridis", s=12, label="Observed", zorder=4, alpha=0.6)
+
             if mode == "pcabo2":
                 pc1_p_r_flat = pc1_p_r.squeeze().detach()
 
                 # Plot acqf
-                axs[1].plot(pc1_p_r_flat, pc1_acqf_log.detach(), c="red", label="acqf")
+                axs[1].plot(pc1_p_r_flat, pc1_acqf_log.detach(), c="red", label="acqf", zorder=2)
 
                 # Plot model
                 posterior = model.posterior(pc1_p_r_flat.unsqueeze(-1))
@@ -191,7 +195,7 @@ class PCABOVisualizer:
                 ci_lower = posterior_mean_log - 1.96 * posterior_var
                 ci_upper = posterior_mean_log + 1.96 * posterior_var
 
-                axs[1].plot(pc1_p_r_flat, posterior_mean_log.detach(), c="green", label="GP mean")
+                axs[1].plot(pc1_p_r_flat, posterior_mean_log.detach(), c="green", label="GP mean", zorder=1)
                 axs[1].fill_between(
                     pc1_p_r_flat,
                     ci_lower.detach(),
@@ -205,19 +209,19 @@ class PCABOVisualizer:
                 pc1_prob_original = p(pc1_p.reshape(-1, 2)).detach()
                 min_prob = pc1_prob_original.min()
                 pc1_prob_log = (pc1_prob_original - min_prob + 1.0 + 1e-8).log()
-                axs[1].plot(pc1_p_r_flat, pc1_prob_log.squeeze(), c="blue", label="Problem")
+                axs[1].plot(pc1_p_r_flat, pc1_prob_log.squeeze(), c="blue", label="Problem", zorder=0)
 
                 # Plot projected points
                 pc1_x_proj = (x - mu) @ component_matrix[: n_components].T
-                axs[1].scatter(pc1_x_proj, (f - min_prob + 1.0 + 1e-8).log())
+                axs[1].scatter(pc1_x_proj, (f - min_prob + 1.0 + 1e-8).log(), zorder=3)
 
                 # Plot points selected to fit the GPR
                 pc1_x_proj = (x[gpr_indices] - mu) @ component_matrix[: n_components].T
-                axs[1].scatter(pc1_x_proj, (f[gpr_indices] - min_prob + 1.0 + 1e-8).log(), c="green")
+                axs[1].scatter(pc1_x_proj, (f[gpr_indices] - min_prob + 1.0 + 1e-8).log(), c="green", zorder=4)
 
                 # Plot candidates
                 pc1_x_proj = (c - mu) @ component_matrix[: n_components].T
-                axs[1].scatter(pc1_x_proj, (p(c).detach() - min_prob + 1.0 + 1e-8).log(), c="red")
+                axs[1].scatter(pc1_x_proj, (p(c).detach() - min_prob + 1.0 + 1e-8).log(), c="red", zorder=5)
 
                 axs[1].autoscale()
 
@@ -229,9 +233,6 @@ class PCABOVisualizer:
         # Plot observed points with a viridis colormap based on value
         observed_scatter = ax.scatter(x[:, 0], x[:, 1], c=-(f - f.min() + 1.0).log(),
                                       cmap="viridis", s=36, label="Observed", zorder=4)
-
-        scaled_scatter = ax.scatter(x_scaled[:, 0], x_scaled[:, 1], c=-(f - f.min() + 1.0).log(),
-                                    cmap="viridis", s=12, label="Observed", zorder=4, alpha=0.6)
 
         # Plot candidates in red
         ax.scatter(c[:, 0], c[:, 1], color="red", s=42, label="New", zorder=5)
@@ -319,12 +320,13 @@ class PCABOVisualizer:
 
         plt.close(fig)
 
-    def save_gifs(self, postfix: Optional[str] = None, duration: int = 1000,
+    def save_gifs(self, prefix: str = "", postfix: Optional[str] = None, duration: int = 1000,
                   loop: int = 0, save_frames: bool = False) -> None:
         """Save the collected images as a GIF.
 
         Args:
-            postfix (str): GIF name postfix e.g. "pcabo_{postfix}.gif"
+            prefix (str): GIF name prefix e.g. "{prefix}{mode}_{postfix}.gif"
+            postfix (str): GIF name postfix e.g. {prefix}{mode}_{postfix}.gif"
             duration (int): Duration per frame in ms
             loop (int): The number of times to loop the GIF (0 for infinite)
             save_frames (bool): Whether to save individual frames to a folder
@@ -332,7 +334,7 @@ class PCABOVisualizer:
         for k in self.images.keys():
             if len(self.images[k]) > 0:
                 self.images[k][0].save(
-                    os.path.join(self.output_dir, f"{k}{'' if postfix is None else '_' + postfix}.gif"),
+                    os.path.join(self.output_dir, f"{prefix}{k}{'' if postfix is None else '_' + postfix}.gif"),
                     save_all=True,
                     append_images=self.images[k][1:],
                     duration=duration,

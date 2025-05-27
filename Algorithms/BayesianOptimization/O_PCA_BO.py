@@ -110,6 +110,10 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         # Call the superclass
         super().__init__(budget, n_DoE, **kwargs)
 
+        self.gpr_p = 0.5
+        self.gpr_val_factor = 0.5
+        self.onorm_factor = 2
+
         self.random_seed = random_seed
         self.q = q
         self.ortho_samples = ortho_samples
@@ -201,7 +205,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         # Start the optimization loop
         while self.number_of_function_evaluations < self.budget:
             # Initialize __z_evals with transformed points
-            self._transform_points_to_reduced_space()
+            self._fit_pca()
 
             # Initialize and fit the GPR model
             self._initialize_model(**kwargs)
@@ -216,7 +220,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             new_x = self._transform_points_to_original_space(new_z)
 
             if self.ortho_samples:
-                ortho_start = perf_counter()
+                # ortho_start = perf_counter()
                 new_x = self.get_orthogonal_samples(new_x)
                 evals = min(len(new_x), self.budget - self.number_of_function_evaluations)
                 new_x = new_x[: evals]
@@ -299,6 +303,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         # Save the visualization gifs if it was enabled
         if self.visualize and self.visualizer is not None:
             self.visualizer.save_gifs(
+                prefix=("o" if self.ortho_samples > 0 else ""),
                 postfix=f"{problem.meta_data.problem_id}_{problem.meta_data.instance}",
                 duration=1000,
                 save_frames=False
@@ -346,7 +351,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
         return torch.from_numpy(weights).unsqueeze(1).to(device=self.device, dtype=self.dtype)
 
-    def _transform_points_to_reduced_space(self) -> None:
+    def _fit_pca(self) -> None:
         """Transform evaluated points to the reduced space using weighted PCA.
 
         This method performs the following steps:
@@ -403,14 +408,29 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         # We need to transform the centered, but unweighted data
         self.__z_evals = (x_centered - self.pca_mean) @ self.component_matrix[: n_components].T
 
+    def _transform_points_to_reduced_space(self, x: torch.tensor) -> torch.tensor:
+        """Transform points from original space to the reduced space.
+
+        Args:
+            x (torch.tensor): A `batch_shape x d`-dim Tensor of points in the original space.
+
+        Returns:
+            torch.tensor: A `batch_shape x r`-dim Tensor of corresponding points in the reduced space.
+        """
+        # Handle the case before PCA is fitted
+        if self.component_matrix is None:
+            raise RuntimeError("PCA is not yet fitted.")
+
+        return (x - self.pca_mean - self.data_mean) @ self.component_matrix[: self.reduced_space_dim].T
+
     def _transform_points_to_original_space(self, z: torch.tensor) -> torch.tensor:
         """Transform points from reduced space back to the original space.
 
         Args:
-            z (torch.tensor): A `batch_shape x d`-dim Tensor of points in the reduced space.
+            z (torch.tensor): A `batch_shape x r`-dim Tensor of points in the reduced space.
 
         Returns:
-            torch.tensor: A `batch_shape x r`-dim Tensor of corresponding point in the original space.
+            torch.tensor: A `batch_shape x d`-dim Tensor of corresponding points in the original space.
         """
         # Handle the case before PCA is fitted
         if self.component_matrix is None:
@@ -461,15 +481,26 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             z_bounds = torch.stack([-torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype),
                                     torch.ones(self.reduced_space_dim, device=self.device, dtype=self.dtype)])
 
-        train_obj = torch.tensor(self.f_evals, device=self.device, dtype=self.dtype)
+        # Get mapping distances
+        x_torch = torch.tensor(self.x_evals, device=self.device, dtype=self.dtype)
+        x_remaped = self._transform_points_to_original_space(self.__z_evals)
+        d = (x_torch - x_remaped).norm(dim=1)  # shape [n]
 
-        _, self.gpr_indices = torch.topk(train_obj.squeeze(), int(0.5 * len(self.__z_evals)), largest=self.maximization)
+        # Get function values
+        v = torch.tensor(self.f_evals, device=self.device, dtype=self.dtype)
+
+        v_ranks = v.squeeze().argsort(descending=self.maximization).argsort().float()
+        d_ranks = d.argsort().argsort().float()
+        scores = self.gpr_val_factor * v_ranks + (1 - self.gpr_val_factor) * d_ranks
+
+        # Decide which points to fit the GPR on
+        _, self.gpr_indices = scores.topk(int(self.gpr_p * len(self.__z_evals)), largest=False)
 
         # Initialize and fit the GP
         start_time = perf_counter()
         self.__model_obj = SingleTaskGP(
             self.__z_evals[self.gpr_indices],
-            train_obj[self.gpr_indices],
+            v[self.gpr_indices],
             # train_Yvar=self._estimate_vars(),
             covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
             outcome_transform=Standardize(m=1),
@@ -528,10 +559,10 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         self.__pacqf = PenalizedAcqf(
             acquisition_function=self.acquisition_function,
             model=self.__model_obj,
-            best_f=self.current_best,
             original_bounds=original_bounds,
-            pca_transform_fn=self._transform_points_to_original_space,
-            penalty_factor=10.0
+            pca_d2r_fn=self._transform_points_to_reduced_space,
+            pca_r2d_fn=self._transform_points_to_original_space,
+            penalty_factor=100.0
         )
 
         # # Calculate all the 2*d inequality constraints List[Tuple[Tensor, Tensor, float]]
@@ -564,20 +595,57 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         #
         # print(f"foot: {perf_counter() - foot}")
 
-        # Optimize
+        # Optimize with comprehensive error handling
         start_time = perf_counter()
-        candidates, _ = optimize_acqf(
-            acq_function=self.__pacqf,
-            bounds=z_bounds,
-            q=self.q,
-            num_restarts=self.__torch_config["NUM_RESTARTS"],
-            raw_samples=self.__torch_config["RAW_SAMPLES"],
-            # batch_initial_conditions=batch_initial_conditions,
-            # inequality_constraints=inequality_constraints,
-            options=self.__torch_config["OPTIMIZE_ACQF_OPTIONS"],
-        )
-        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
+        max_attempts = 5
+        attempt = 0
 
+        while attempt < max_attempts:
+            try:
+                candidates, _ = optimize_acqf(
+                    acq_function=self.__pacqf,
+                    bounds=z_bounds,
+                    q=self.q,
+                    num_restarts=max(5, self.__torch_config["NUM_RESTARTS"] // (attempt + 1)),
+                    raw_samples=max(512, self.__torch_config["RAW_SAMPLES"] // (attempt + 1)),
+                    options={**self.__torch_config["OPTIMIZE_ACQF_OPTIONS"],
+                             "maxiter": max(20, self.__torch_config["OPTIMIZE_ACQF_OPTIONS"].get("maxiter", 100) // (
+                                         attempt + 1))},
+                )
+                break  # Success, exit the retry loop
+
+            except Exception as e:
+                attempt += 1
+                error_type = str(type(e).__name__)
+
+                if self.verbose:
+                    print(f"\nAttempt {attempt}/{max_attempts} failed with {error_type}")
+
+                if attempt >= max_attempts:
+                    # Final fallback: generate candidates using different strategies
+                    if self.verbose:
+                        print(f"All optimization attempts failed, using fallback sampling")
+
+                    if len(self.__z_evals) > 1:
+                        # Strategy 1: Sample around best points in reduced space
+                        best_indices = torch.argsort(torch.tensor(self.f_evals, device=self.device).flatten())[:3]
+                        best_z = self.__z_evals[best_indices]
+
+                        # Add small random perturbations
+                        noise_scale = (z_bounds[1] - z_bounds[0]) * 0.1
+                        candidates = best_z[:self.q] + torch.randn(
+                            min(self.q, len(best_z)), self.reduced_space_dim,
+                            device=self.device, dtype=self.dtype
+                        ) * noise_scale
+                    else:
+                        # Strategy 2: Pure random sampling
+                        candidates = torch.rand(self.q, self.reduced_space_dim,
+                                                device=self.device, dtype=self.dtype)
+                        candidates = candidates * (z_bounds[1] - z_bounds[0]) + z_bounds[0]
+
+                    break
+
+        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
         return candidates
 
     def get_orthogonal_samples(self, x: Tensor):
@@ -616,8 +684,10 @@ class O_PCA_BO(AbstractBayesianOptimizer):
                     float(-ubc[i])
                 ))
 
+            sample_size_multiplier = max(1, int(self.onorm_factor *
+                                                max(1, int((self.dimension-self.reduced_space_dim) ** 0.5))))
             ortho_lin_comb = sample_q_batches_from_polytope(
-                n=self.ortho_samples,
+                n=self.ortho_samples*sample_size_multiplier,
                 q=1,
                 bounds=ortho_bounds,
                 n_burnin=max(100, 10 * (self.dimension - self.reduced_space_dim)),
@@ -627,9 +697,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
             ortho_part = ortho_lin_comb @ self.component_matrix[self.reduced_space_dim:]
 
-            # # Select self.ortho_samples closest to [0]*d
-            # _, ind = torch.topk(torch.norm(ortho_part, dim=1), self.ortho_samples, largest=False)
-            # ortho_part = ortho_part[ind]
+            # Select self.ortho_samples closest to [0]*d
+            _, ind = torch.topk(torch.norm(ortho_part, dim=1), self.ortho_samples, largest=False)
+            ortho_part = ortho_part[ind]
 
             # new_x = torch.cat([new_x, candidate.unsqueeze(0), candidate + ortho_part])
 

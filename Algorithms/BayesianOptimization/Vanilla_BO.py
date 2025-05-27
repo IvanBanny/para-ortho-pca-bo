@@ -262,18 +262,64 @@ class Vanilla_BO(AbstractBayesianOptimizer):
             **({"maximize": self.maximization} if self.q == 1 else {"objective": objective})
         )
 
-        # Optimize
-        start_time = perf_counter()
-        candidates, _ = optimize_acqf(
-            acq_function=self.acquisition_function,
-            bounds=torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T,
-            q=self.q,
-            num_restarts=self.__torch_config["NUM_RESTARTS"],
-            raw_samples=self.__torch_config["RAW_SAMPLES"],
-            options=self.__torch_config["OPTIMIZE_ACQF_OPTIONS"],
-        )
-        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
+        # Get bounds tensor
+        bounds_tensor = torch.tensor(self.bounds, device=self.device, dtype=self.dtype).T
 
+        # Optimize with comprehensive error handling
+        start_time = perf_counter()
+        max_attempts = 5
+        attempt = 0
+
+        while attempt < max_attempts:
+            try:
+                candidates, _ = optimize_acqf(
+                    acq_function=self.acquisition_function,
+                    bounds=bounds_tensor,
+                    q=self.q,
+                    num_restarts=max(5, self.__torch_config["NUM_RESTARTS"] // (attempt + 1)),
+                    raw_samples=max(512, self.__torch_config["RAW_SAMPLES"] // (attempt + 1)),
+                    options={**self.__torch_config["OPTIMIZE_ACQF_OPTIONS"],
+                             "maxiter": max(20, self.__torch_config["OPTIMIZE_ACQF_OPTIONS"].get("maxiter", 100) // (
+                                         attempt + 1))},
+                )
+                break  # Success, exit the retry loop
+
+            except Exception as e:
+                attempt += 1
+                error_type = str(type(e).__name__)
+
+                if self.verbose:
+                    print(f"\nAttempt {attempt}/{max_attempts} failed with {error_type}")
+
+                if attempt >= max_attempts:
+                    # Final fallback: generate candidates using different strategies
+                    if self.verbose:
+                        print(f"All optimization attempts failed, using fallback sampling")
+
+                    if len(self.x_evals) > 1:
+                        # Strategy 1: Sample around best points
+                        best_indices = np.argsort(self.f_evals.flatten())[:3]
+                        best_x = torch.tensor(self.x_evals[best_indices], device=self.device, dtype=self.dtype)
+
+                        # Add small random perturbations
+                        bounds_range = bounds_tensor[1] - bounds_tensor[0]
+                        noise_scale = bounds_range * 0.1
+                        candidates = best_x[:self.q] + torch.randn(
+                            min(self.q, len(best_x)), self.dimension,
+                            device=self.device, dtype=self.dtype
+                        ) * noise_scale
+
+                        # Clamp to bounds
+                        candidates = torch.clamp(candidates, bounds_tensor[0], bounds_tensor[1])
+                    else:
+                        # Strategy 2: Pure random sampling within bounds
+                        candidates = torch.rand(self.q, self.dimension,
+                                                device=self.device, dtype=self.dtype)
+                        candidates = candidates * (bounds_tensor[1] - bounds_tensor[0]) + bounds_tensor[0]
+
+                    break
+
+        self.timing_logs["optimize_acqf"].append(perf_counter() - start_time)
         return candidates
 
     def __repr__(self):

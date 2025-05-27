@@ -18,7 +18,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         acquisition_function: The acquisition function
         model: The surrogate model (typically a SingleTaskGP)
         original_bounds: The bounds of the original search space
-        pca_transform_fn: Function to map points from reduced to original space
+        pca_d2r_fn: Function to map points from original to reduced space
+        pca_r2d_fn: Function to map points from reduced to original space
         penalty_factor: Factor to control the penalty strength
     """
 
@@ -26,19 +27,19 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             self,
             acquisition_function: Callable,
             model: Model,
-            best_f: Union[float, Tensor],
             original_bounds: Tensor,
-            pca_transform_fn: callable,
-            penalty_factor: float = 1.0,
+            pca_d2r_fn: Callable,
+            pca_r2d_fn: Callable,
+            penalty_factor: float = 100.0,
     ) -> None:
         """Initialize Penalized Expected Improvement.
 
         Args:
             acquisition_function: Acquisition function to base on
             model: A fitted model
-            best_f: The best function value observed so far
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
-            pca_transform_fn: Function that maps points from reduced space to original space
+            pca_d2r_fn: Function to map points from original to reduced space
+            pca_r2d_fn: Function to map points from reduced to original space
             penalty_factor: Factor to control the strength of the penalty (default: 1.0)
         """
         super().__init__(model=model)
@@ -47,86 +48,46 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # Original bounds of the search space [lower, upper]
         self.register_buffer("original_bounds", torch.as_tensor(original_bounds))
         # PCA transform function reference
-        self.pca_transform_fn = pca_transform_fn
+        self.pca_d2r_fn = pca_d2r_fn
+        self.pca_r2d_fn = pca_r2d_fn
         # Penalty scaling factor
         self.penalty_factor = penalty_factor
-
-    def _compute_penalty(self, X: Tensor) -> Tensor:
-        """Compute the penalty for points that would fall outside the original space.
-
-        Args:
-            X: A `batch_shape x q x d`-dim Tensor of inputs
-
-        Returns:
-            A `batch_shape`-dim Tensor of penalties (non-positive values)
-        """
-        # Save original batch shape for reshaping at the end
-        batch_shape = X.shape[:-2]
-        q = X.shape[-2]
-
-        # Reshape input for processing
-        X_flat = X.view(-1, X.shape[-1])
-
-        # print(X_flat)
-
-        # Map points to original space using the provided transformation function
-        X_orig = self.pca_transform_fn(X_flat)
-
-        # Get original bounds
-        lower_bounds = self.original_bounds[:, 0]
-        upper_bounds = self.original_bounds[:, 1]
-
-        # Check if points are outside bounds
-        # print(lower_bounds)
-        # print(X_orig)
-        outside_lower = torch.clamp(lower_bounds - X_orig, min=0)
-        outside_upper = torch.clamp(X_orig - upper_bounds, min=0)
-
-        # Compute distance to boundary for points outside bounds
-        distance_to_boundary = torch.sum(outside_lower + outside_upper, dim=-1)
-
-        # Reshape to match batch dimensions and q
-        distance_to_boundary = distance_to_boundary.view(*batch_shape, q)
-
-        # We need to aggregate across q-dimension to match expected output shape
-        # Using minimum distance (most conservative approach)
-        distance_to_boundary = distance_to_boundary.min(dim=-1)[0]
-
-        # Calculate penalty (negative distance, so points outside have negative values)
-        penalty = -self.penalty_factor * distance_to_boundary
-
-        # Points inside bounds get zero penalty, points outside get negative penalty
-        # Ensure all feasible points have exactly zero penalty
-        is_feasible = (distance_to_boundary == 0)
-        penalty = torch.where(is_feasible, torch.zeros_like(penalty), penalty)
-
-        return penalty
 
     @t_batch_mode_transform()
     def forward(self, X: Tensor) -> Tensor:
         """Evaluate pacqf on the candidate set X.
 
         Args:
-            X: A `batch_shape x q x d`-dim Tensor of inputs
+            X: A `batch_shape x q x r`-dim Tensor of inputs
 
         Returns:
-            A `batch_shape`-dim Tensor of PEI values at the given design points X
+            A `batch_shape`-dim Tensor of pacqf values at the given design points X
         """
-        # Compute regular expected improvement
-        acqf_values = self.acquisition_function(X)
+        lb = self.original_bounds[:, 0]  # shape [d]
+        ub = self.original_bounds[:, 1]  # shape [d]
 
-        # Check if points would be feasible in original space
-        penalty = self._compute_penalty(X)
+        X_flat = X.view(-1, X.shape[-1])  # shape [(batch_shape * q) x r]
+        X_orig = self.pca_r2d_fn(X_flat).view(*X.shape[: -1], -1)  # shape [batch_shape x q x d]
 
-        # Combine EI with penalty:
-        # - For feasible points, use EI value (penalty is 0)
-        # - For infeasible points, use penalty (negative value)
-        is_feasible = (penalty == 0)
+        X_clamped = torch.max(torch.min(X_orig, ub), lb)  # shape [batch_shape x q x d]
 
-        # Where feasible, use EI; where infeasible, use penalty
-        pei_values = torch.where(is_feasible, acqf_values, penalty)  # penalty
+        within_bounds_per_point = ((X_orig >= lb) & (X_orig <= ub)).all(dim=-1)  # shape [batch_shape x q]
+        all_q_within_bounds = within_bounds_per_point.all(dim=-1)  # shape [batch_shape]
 
-        return pei_values
+        acqf_vals = self.acquisition_function(self.pca_d2r_fn(X_orig))  # shape [batch_shape]
+
+        if all_q_within_bounds.all():
+            return acqf_vals
+
+        distances_per_point = torch.norm(X_orig - X_clamped, dim=-1)  # shape [batch_shape x q]
+        sum_q_distances = distances_per_point.sum(dim=-1)  # shape [batch_shape]
+
+        result = acqf_vals.clone()  # shape [batch_shape]
+        needs_penalty = ~all_q_within_bounds  # shape [batch_shape]
+        result[needs_penalty] = (self.acquisition_function(self.pca_d2r_fn(X_clamped[needs_penalty]))
+                                 - self.penalty_factor * sum_q_distances[needs_penalty])
+
+        return result  # shape [batch_shape]
 
     def log_forward(self, X: Tensor):
         """Evaluate pacqf on the candidate set X with verbose returns.
@@ -139,12 +100,30 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             A `batch_shape`-dim Tensor of penalty values at the given design points X
             A `batch_shape`-dim Tensor of pacqf values at the given design points X
         """
-        acqf_values = self.acquisition_function(X)
+        lb = self.original_bounds[:, 0]  # shape [d]
+        ub = self.original_bounds[:, 1]  # shape [d]
 
-        penalty = self._compute_penalty(X)
+        X_flat = X.view(-1, X.shape[-1])  # shape [(batch_shape * q) x r]
+        X_orig = self.pca_r2d_fn(X_flat).view(*X.shape[: -1], -1)  # shape [batch_shape x q x d]
 
-        is_feasible = (penalty == 0)
+        X_clamped = torch.max(torch.min(X_orig, ub), lb)  # shape [batch_shape x q x d]
 
-        pei_values = torch.where(is_feasible, acqf_values, penalty)
+        within_bounds_per_point = ((X_orig >= lb) & (X_orig <= ub)).all(dim=-1)  # shape [batch_shape x q]
+        all_q_within_bounds = within_bounds_per_point.all(dim=-1)  # shape [batch_shape]
 
-        return acqf_values, penalty, pei_values
+        acqf_vals = self.acquisition_function(self.pca_d2r_fn(X_orig))  # shape [batch_shape]
+
+        if all_q_within_bounds.all():
+            return acqf_vals
+
+        distances_per_point = torch.norm(X_orig - X_clamped, dim=-1)  # shape [batch_shape x q]
+        sum_q_distances = distances_per_point.sum(dim=-1)  # shape [batch_shape]
+
+        result = acqf_vals.clone()  # shape [batch_shape]
+        needs_penalty = ~all_q_within_bounds  # shape [batch_shape]
+        result[needs_penalty] = (self.acquisition_function(self.pca_d2r_fn(X_clamped[needs_penalty]))
+                                 - self.penalty_factor * sum_q_distances[needs_penalty])
+
+        return (self.acquisition_function(self.pca_d2r_fn(X_clamped)),
+                self.penalty_factor * sum_q_distances,
+                result)
