@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 
 from ioh import get_problem
 from ioh.iohcpp.logger import Analyzer
-from ioh.iohcpp.logger.property import RAWYBEST
+from ioh.iohcpp.logger.property import RAWYBEST, CURRENTY, CURRENTBESTY
 from ioh.iohcpp.logger.trigger import ALWAYS
 
 # Import BO algorithms
@@ -110,7 +110,7 @@ class ExperimentRunner:
 
         # Additional logger properties
         self.triggers = [ALWAYS]  # Log on every problem evaluation
-        self.logger_properties = [RAWYBEST]  # Log best-so-far value
+        self.logger_properties = [RAWYBEST, CURRENTY, CURRENTBESTY]
 
         if self.instances is None:
             if self.num_runs is None:
@@ -283,7 +283,7 @@ class ExperimentRunner:
             print("No experiments to run!")
             return {"total_runs": 0, "successful_runs": 0, "failed_runs": 0}
 
-        print(f"\nRunning {total_runs} experiments in parallel: ({len(self.algorithms)} algorithms × "
+        print(f"\nRunning {total_runs} experiments: ({len(self.algorithms)} algorithms × "
               f"{len(self.batch_sizes)} batch sizes × {len(self.dimensions)} dimensions × "
               f"{len(self.problem_ids)} problems × {len(self.instances)} runs)\n")
 
@@ -299,11 +299,11 @@ class ExperimentRunner:
         if total_runs == 1:
             results = [self.run_experiment(**params_list[0])]
         else:
-            with tqdm_joblib(tqdm(desc="Total Progress", total=total_runs, position=0)) as progress_bar:
-                results = Parallel(n_jobs=-1, verbose=10)(
-                    delayed(self.run_experiment)(**params)
-                    for params in params_list
-                )
+            # with tqdm_joblib(tqdm(desc="Total Progress", total=total_runs, position=0)) as progress_bar:
+            results = Parallel(n_jobs=-1, verbose=10)(
+                delayed(self.run_experiment)(**params)
+                for params in params_list
+            )
 
         # Calculate summary statistics
         successful_runs = sum(1 for success, _ in results if success)

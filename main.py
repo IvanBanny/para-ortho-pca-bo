@@ -52,6 +52,14 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--instances",
+        type=int,
+        nargs="+",
+        default=None,
+        help="BBOB problem instances to test (default: None)"
+    )
+
+    parser.add_argument(
         "--runs",
         type=int,
         default=30,
@@ -69,14 +77,14 @@ def parse_arguments():
         "--doe_factor",
         type=int,
         default=3,
-        help="Factor for initial design size: n_doe = doe_factor * dim (default: 3.0)"
+        help="Factor for initial design size: n_doe = doe_factor * dim (default: 3)"
     )
 
     parser.add_argument(
         "--experiment_dir",
         type=str,
         default="experiment",
-        help="Directory to store experiment results (default: pca-bo-experiment)"
+        help="Directory to store experiment results (default: experiment)"
     )
 
     parser.add_argument(
@@ -130,7 +138,7 @@ def main():
         batch_sizes=args.batch,
         dimensions=args.dimensions,
         problem_ids=args.problems,
-        instances=None,
+        instances=args.instances,
         num_runs=args.runs,
         budget_factor=args.budget_factor,
         doe_factor=args.doe_factor,

@@ -134,7 +134,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
         self.__torch_config = {
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-            "dtype": torch.float,
+            "dtype": torch.double,
             "NUM_RESTARTS": 20,
             "RAW_SAMPLES": 4096,
             "OPTIMIZE_ACQF_OPTIONS": {"maxiter": 100, "method": "L-BFGS-B"},
