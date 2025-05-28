@@ -83,7 +83,7 @@ def parse_arguments():
         "--acquisition",
         type=str,
         default="EI",
-        choices=["EI", "PI", "UCB"],
+        choices=["EI", "PI"],
         help="Acquisition function to use (default: EI)"
     )
 

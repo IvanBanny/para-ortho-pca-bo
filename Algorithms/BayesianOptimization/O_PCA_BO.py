@@ -77,6 +77,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             ortho_samples: int = 3,
             n_components: int = 0,
             var_threshold: float = 0.95,
+            gpr_p: float = 0.5,
+            gpr_val_factor: float = 0.5,
+            onorm_factor: float = 2.0,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -98,6 +101,11 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             n_components (int, optional): Number of principal components to use. If 0, determined
                                           by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
+            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0, 1]. Defaults to 0.5.
+            gpr_val_factor (float, optional): relative influence of value rank to distance rank
+                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.5.
+            onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
+                                            0 for uniform sampling. Defaults to 2.0.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
             torch_config (Dict[str, Any], optional): gpu configuration.
@@ -110,21 +118,19 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         # Call the superclass
         super().__init__(budget, n_DoE, **kwargs)
 
-        self.gpr_p = 0.5
-        self.gpr_val_factor = 0.5
-        self.onorm_factor = 2
-
         self.random_seed = random_seed
+
         self.q = q
+
+        # Additional O-PCA-BO params
+        self.gpr_p = gpr_p
+        self.gpr_val_factor = gpr_val_factor
+        self.onorm_factor = onorm_factor
         self.ortho_samples = ortho_samples
 
-        self.gpr_indices = None
-
-        # Acquisition function attributes
-        self.__acqf_class = None
-        self.__acqf = None
-        self.__pacqf = None
-        self.acquisition_function_name = acquisition_function
+        # Set PCA parameters
+        self.n_components = n_components
+        self.var_threshold = var_threshold
 
         self.__torch_config = {
             "device": torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
@@ -148,10 +154,6 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         if self.verbose:
             print(f"\nUsing device: {self.device}")
 
-        # Set PCA parameters
-        self.n_components = n_components
-        self.var_threshold = var_threshold
-
         # PCA attributes
         self.data_mean = None
         self.component_matrix = None
@@ -159,6 +161,16 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         self.explained_variance_ratio = None
         self.reduced_space_dim = None
         self.__z_evals = torch.tensor(0, device=self.device, dtype=self.dtype)  # Points in the reduced space
+
+        # GPR attributes
+        self.__model_obj = None
+        self.gpr_indices = None
+
+        # Acquisition function attributes
+        self.__acqf_class = None
+        self.__acqf = None
+        self.__pacqf = None
+        self.acquisition_function_name = acquisition_function
 
         # Initialize visualizer if requested
         self.visualize = visualize
@@ -440,7 +452,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         return z @ self.component_matrix[: self.reduced_space_dim] + self.pca_mean + self.data_mean
 
     def _estimate_vars(self):
-        te0 = perf_counter()
+        # te0 = perf_counter()
         x_torch = torch.tensor(self.x_evals, device=self.device, dtype=self.dtype)
         x_remaped = self._transform_points_to_original_space(self.__z_evals)
         d = (x_torch - x_remaped).norm(dim=1)  # shape [n]: d_i
@@ -510,18 +522,45 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             )
         )
         mll = ExactMarginalLogLikelihood(self.__model_obj.likelihood, self.__model_obj)
+
+        # Use fit_gpytorch_mll with its built-in retry logic
         try:
-            fit_gpytorch_mll(mll)
-        except ModelFittingError:
+            fit_gpytorch_mll(
+                mll,
+                max_attempts=5,  # Use 5 attempts as requested
+                optimizer_kwargs={"options": {"maxiter": 200}},  # Properly nested optimizer settings
+                pick_best_of_all_attempts=True  # Try all attempts and pick the best
+            )
+
+            if self.verbose and mll.training:
+                # If mll is still in training mode, fitting failed but didn't raise exception
+                print("\nWarning: GPR fitting completed but model remains in training mode")
+
+        except ModelFittingError as e:
             if self.verbose:
-                print("\nWarning: standard fitting failed, trying alternative...\n")
+                print(f"\nWarning: All GPR fitting attempts failed: {e}")
+                print("Using model with default hyperparameters")
+
+            # Final fallback: create a fresh model with default hyperparameters
             try:
-                # Try with more conservative settings
-                fit_gpytorch_mll(mll, options={"maxiter": 200, "lr": 0.01})
-            except ModelFittingError:
-                # Last resort: use model with default hyperparameters
+                self.__model_obj = SingleTaskGP(
+                    self.__z_evals[self.gpr_indices],
+                    v[self.gpr_indices],
+                    # train_Yvar=self._estimate_vars(),
+                    covar_module=MaternKernel(2.5),
+                    outcome_transform=Standardize(m=1),
+                    input_transform=Normalize(
+                        d=self.__z_evals.shape[-1],
+                        bounds=z_bounds
+                    )
+                )
+                # Set to evaluation mode without fitting
+                self.__model_obj.eval()
+
+            except Exception as e:
                 if self.verbose:
-                    print("\nWarning: both GPR fitting attempts failed, using default hyperparameters\n")
+                    print(f"\nCritical error: Could not create GP model: {e}")
+                raise RuntimeError("Failed to initialize GP model after all attempts") from e
 
         self.timing_logs["fit_gpytorch_mll"].append(perf_counter() - start_time)
 
@@ -772,6 +811,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
                 self.__acqf_class = qLogExpectedImprovement
             elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
                 self.__acqf_class = qProbabilityOfImprovement
+
     @property
     def acquisition_function_class(self) -> Callable:
         """Get the acquisition function class."""

@@ -5,14 +5,16 @@ on benchmark problems from the BBOB suite.
 """
 
 import contextlib
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import os
+import sys
+import traceback
 from time import perf_counter
 from tqdm.auto import tqdm
 import joblib
 from joblib import Parallel, delayed
 
-from ioh.iohcpp.suite import BBOB
+from ioh import get_problem
 from ioh.iohcpp.logger import Analyzer
 from ioh.iohcpp.logger.property import RAWYBEST
 from ioh.iohcpp.logger.trigger import ALWAYS
@@ -55,6 +57,9 @@ class ExperimentRunner:
         random_seed: int = 69,
         acquisition_function: str = "EI",
         var_threshold: float = 0.95,
+        gpr_p: float = 0.5,
+        gpr_val_factor: float = 0.5,
+        onorm_factor: float = 2.0,
         root_dir: str = os.getcwd(),
         experiment_name: str = "experiment",
         torch_config: Optional[Dict[str, Any]] = None,
@@ -74,6 +79,11 @@ class ExperimentRunner:
             random_seed: Randomness seed.
             acquisition_function: Acquisition function name.
             var_threshold: PCA variance threshold.
+            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0, 1]. Defaults to 0.5.
+            gpr_val_factor (float, optional): relative influence of value rank to distance rank
+                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.5.
+            onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
+                                            0 for uniform sampling. Defaults to 2.0.
             root_dir: Root directory for experiment output dir.
             experiment_name: Name of the experiment dir.
             torch_config: gpu configuration.
@@ -90,6 +100,9 @@ class ExperimentRunner:
         self.random_seed = random_seed
         self.acquisition_function = acquisition_function
         self.var_threshold = var_threshold
+        self.gpr_p = gpr_p
+        self.gpr_val_factor = gpr_val_factor
+        self.onorm_factor = onorm_factor
         self.root_dir = root_dir
         self.experiment_name = experiment_name
         self.torch_config = torch_config
@@ -107,7 +120,7 @@ class ExperimentRunner:
 
         self.doe_params = {"criterion": "center", "iterations": 1000}
 
-    def run_experiment(self, algorithm, batch_size, dim, pid, instance):
+    def run_experiment(self, algorithm, batch_size, dim, pid, instance) -> Tuple[bool, Optional[str]]:
         """Run a single experiment with specified parameters.
 
         Args:
@@ -116,133 +129,200 @@ class ExperimentRunner:
             dim: Problem dimension
             pid: Problem ID
             instance: Instance number
+
+        Returns:
+            Tuple of (success: bool, error_message: Optional[str])
         """
-        # Get problem info
-        suite = BBOB(problem_ids=[pid], dimensions=[dim], instances=[instance])
-        problem = next(iter(suite))
-        maximization = bool(problem.meta_data.optimization_type.value)
-        budget = self.budget_factor * dim + 50
-        n_doe = int(self.doe_factor * dim)
+        run_id = f"{algorithm} | b{batch_size} | d{dim} | f{pid} | i{instance}"
+        logger = None
 
-        if self.verbose:
-            print(f"\nRunning {algorithm} | {batch_size}-batch | {dim}-dim | F-{pid} | i-{instance}:\n")
+        try:
+            # Get problem info
+            problem = get_problem(fid=pid, instance=instance, dimension=dim)
+            maximization = bool(problem.meta_data.optimization_type.value)
+            budget = self.budget_factor * dim + 50
+            n_doe = int(self.doe_factor * dim)
 
-        # Setup logger
-        dump_path = os.path.join(self.root_dir, self.experiment_name)
-        os.makedirs(dump_path, exist_ok=True)
-        logger = Analyzer(
-            triggers=self.triggers,
-            root=dump_path,
-            folder_name=f"{algorithm}-b{batch_size}-d{dim}-p{pid}-i{instance}",
-            algorithm_name=algorithm,
-            algorithm_info=f"A {algorithm}-BO Implementation.",
-            additional_properties=self.logger_properties,
-            store_positions=True
-        )
+            if self.verbose:
+                print(f"\nRunning {run_id}:\n")
 
-        # Add relevant shared experiment settings
-        logger.set_experiment_attributes({
-            "budget": f"{budget}",
-            "doe": f"{n_doe}",
-            "acquisition_function": f"{self.acquisition_function}",
-            "random_seed": f"{self.random_seed}",
-            "torch_config": f"{self.torch_config}",
-            "self.doe_params": f"{self.doe_params}",
-        })
+            # Setup logger
+            dump_path = os.path.join(self.root_dir, self.experiment_name)
+            os.makedirs(dump_path, exist_ok=True)
+            logger = Analyzer(
+                triggers=self.triggers,
+                root=dump_path,
+                folder_name=f"{algorithm}-b{batch_size}-d{dim}-p{pid}-i{instance}",
+                algorithm_name=algorithm,
+                algorithm_info=f"A {algorithm}-BO Implementation.",
+                additional_properties=self.logger_properties,
+                store_positions=True
+            )
+
+            # Add relevant shared experiment settings
+            logger.set_experiment_attributes({
+                "budget": f"{budget}",
+                "doe": f"{n_doe}",
+                "acquisition_function": f"{self.acquisition_function}",
+                "random_seed": f"{self.random_seed}",
+                "torch_config": f"dict{self.torch_config}",
+                "doe_params": f"dict{self.doe_params}",
+                "optimum": f"{problem.optimum.y}"
+            })
+
+            # Initialize optimizer based on algorithm type
+            optimizer = self._create_optimizer(
+                algorithm, batch_size, budget, n_doe, maximization
+            )
+
+            # Add profiling attributes to logger
+            for time_profile in getattr(optimizer, "TIME_PROFILES", []):
+                logger.add_run_attribute(f"{time_profile}_time", 0.0)
+            logger.add_run_attribute("time", 0.0)
+
+            problem.attach_logger(logger)
+
+            # Run the optimization with error handling
+            start_time = perf_counter()
+            optimizer(problem=problem)
+            total_time = perf_counter() - start_time
+
+            # Record timing information
+            logger.set_run_attribute("time", total_time)
+            for time_profile, total_profile_time in optimizer.total_times.items():
+                logger.set_run_attribute(f"{time_profile}_time", total_profile_time)
+
+            return True, None
+
+        except Exception as e:
+            error_msg = f"Run failed ({run_id}): {str(e)}"
+            print(error_msg, file=sys.stderr)
+
+            # Print traceback for debugging if verbose
+            if self.verbose:
+                print(f"Traceback for {run_id}:", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+
+            return False, error_msg
+
+        finally:
+            if logger is not None:
+                try:
+                    logger.close()
+                except Exception as cleanup_error:
+                    print(f"Warning: Error closing logger for {run_id}: {cleanup_error}",
+                          file=sys.stderr)
+
+    def _create_optimizer(self, algorithm: str, batch_size: int, budget: int,
+                         n_doe: int, maximization: bool):
+        """Create optimizer instance based on algorithm type.
+
+        Args:
+            algorithm: Algorithm name
+            batch_size: Batch size
+            budget: Evaluation budget
+            n_doe: Number of initial design points
+            maximization: Whether this is a maximization problem
+
+        Returns:
+            Configured optimizer instance
+        """
+        common_params = {
+            "budget": budget,
+            "n_DoE": n_doe,
+            "acquisition_function": self.acquisition_function,
+            "random_seed": self.random_seed,
+            "torch_config": self.torch_config,
+            "maximization": maximization,
+            "verbose": self.verbose,
+            "DoE_parameters": self.doe_params
+        }
 
         match algorithm:
             case "vanilla":
-                optimizer = Vanilla_BO(
-                    budget=budget,
-                    n_DoE=n_doe,
+                return Vanilla_BO(q=batch_size, **common_params)
+
+            case "pca":
+                return O_PCA_BO(
                     q=batch_size,
-                    acquisition_function=self.acquisition_function,
-                    random_seed=self.random_seed,
-                    torch_config=self.torch_config,
-                    maximization=maximization,
-                    verbose=self.verbose,
-                    DoE_parameters=self.doe_params
-                )
-                logger.set_experiment_attributes({
-                    "q": f"{batch_size}",
-                })
-            case "pca" | "opca":
-                optimizer = O_PCA_BO(
-                    budget=budget,
-                    n_DoE=n_doe,
-                    q=(batch_size if algorithm == "pca" else 1),
-                    ortho_samples=(0 if algorithm == "pca" else batch_size),
+                    ortho_samples=0,
                     var_threshold=self.var_threshold,
-                    acquisition_function=self.acquisition_function,
-                    random_seed=self.random_seed,
-                    torch_config=self.torch_config,
-                    maximization=maximization,
-                    verbose=self.verbose,
-                    DoE_parameters=self.doe_params
+                    gpr_p=1.0,
+                    gpr_val_factor=0.5,
+                    **common_params
                 )
-                logger.set_experiment_attributes({
-                    **({"q": f"{batch_size}"} if algorithm == "pca" else {}),
-                    **({"q": "1", "ortho_samples": f"{batch_size}"} if algorithm == "opca" else {}),
-                    "var_threshold": f"{self.var_threshold}"
-                })
+
+            case "opca":
+                return O_PCA_BO(
+                    q=1,
+                    ortho_samples=batch_size,
+                    var_threshold=self.var_threshold,
+                    gpr_p=self.gpr_p,
+                    gpr_val_factor=self.gpr_val_factor,
+                    onorm_factor=self.onorm_factor,
+                    **common_params
+                )
+
             case _:
                 raise ValueError(f"Invalid algorithm name: '{algorithm}'")
 
-        # Add profile timings to the run before attaching the problem
-        # ioh refuses to do it DURING the run OR in a loop
-        # because it is, permanently, a teapot
-        # seriously, I hate ioh.iohcpp.logger.Analyzer so much I spent like two full days on this.
-        # I've tried everything, trust me. It just contradicts itself in profoundly impressive ways
-        # I don't even know how could it possibly be written THIS bad
-        for time_profile in getattr(optimizer, "TIME_PROFILES", []):
-            logger.add_run_attribute(f"{time_profile}_time", 0.0)
-
-        logger.add_run_attribute("time", 0.0)
-
-        suite.attach_logger(logger)
-
-        # Run the optimization
-        start_time = perf_counter()
-        optimizer(problem=problem)
-        logger.set_run_attribute("time", perf_counter() - start_time)
-
-        # Retrieve profiling data, Extract total function timings, Profit Operation
-        for time_profile, total_profile_time in optimizer.total_times.items():
-            logger.set_run_attribute(f"{time_profile}_time", total_profile_time)
-
-        # Detach logger from the suite and close logger
-        suite.detach_logger()
-        logger.close()
-
-    def __call__(self) -> None:
+    def __call__(self) -> Dict[str, Any]:
         """Runs the complete experiment comparing Vanilla-BO, PCA-BO, and O-PCA-BO.
 
         This function performs the experiment across all specified dimensions,
         functions, and runs.
+
+        Returns:
+            Dictionary containing experiment summary statistics
         """
         # Calculate total number of experiments
         total_runs = (len(self.algorithms) * len(self.batch_sizes) *
-                      len(self.problem_ids) * len(self.dimensions) * self.num_runs)
+                      len(self.problem_ids) * len(self.dimensions) * len(self.instances))
 
-        results = []
         if total_runs == 0:
             print("No experiments to run!")
+            return {"total_runs": 0, "successful_runs": 0, "failed_runs": 0}
+
+        print(f"\nRunning {total_runs} experiments in parallel: ({len(self.algorithms)} algorithms × "
+              f"{len(self.batch_sizes)} batch sizes × {len(self.dimensions)} dimensions × "
+              f"{len(self.problem_ids)} problems × {len(self.instances)} runs)\n")
+
+        params_list = [
+            {"algorithm": a, "batch_size": b, "dim": d, "pid": p, "instance": i}
+            for a in self.algorithms
+            for b in self.batch_sizes
+            for d in self.dimensions
+            for p in self.problem_ids
+            for i in self.instances
+        ]
+
         if total_runs == 1:
-            results = self.run_experiment(self.algorithms[0], self.batch_sizes[0], self.dimensions[0],
-                                          self.problem_ids[0], self.instances[0])
+            results = [self.run_experiment(**params_list[0])]
         else:
-            print(f"\nRunning {total_runs} experiments in parallel: ({len(self.algorithms)} algorithms × "
-                  f"{len(self.batch_sizes)} batch sizes × {len(self.dimensions)} dimensions × "
-                  f"{len(self.problem_ids)} problems × {self.num_runs} runs)\n")
-
-            params_list = [{"algorithm": a, "batch_size": b, "dim": d, "pid": p, "instance": i}
-                           for a in self.algorithms for b in self.batch_sizes for d in self.dimensions
-                           for p in self.problem_ids for i in self.instances]
-
             with tqdm_joblib(tqdm(desc="Total Progress", total=total_runs, position=0)) as progress_bar:
                 results = Parallel(n_jobs=-1, verbose=10)(
                     delayed(self.run_experiment)(**params)
                     for params in params_list
                 )
 
-        print(results)
+        # Calculate summary statistics
+        successful_runs = sum(1 for success, _ in results if success)
+        failed_runs = total_runs - successful_runs
+
+        summary = {
+            "total_runs": total_runs,
+            "successful_runs": successful_runs,
+            "failed_runs": failed_runs,
+            "success_rate": successful_runs / total_runs if total_runs > 0 else 0.0
+        }
+
+        print(f"\nExperiment completed:")
+        print(f"  Total runs: {summary['total_runs']}")
+        print(f"  Successful: {summary['successful_runs']}")
+        print(f"  Failed: {summary['failed_runs']}")
+        print(f"  Success rate: {summary['success_rate']:.2%}")
+
+        if failed_runs > 0:
+            print(f"\nWarning: {failed_runs} runs failed. Check stderr output for details.")
+
+        return summary
