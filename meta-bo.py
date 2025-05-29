@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 import torch
 import polars as pl
-from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 from botorch.models import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
@@ -25,9 +24,10 @@ class BayesianOptimizer:
 
     def sample_initial_candidates(self, n_candidates: int = 20) -> torch.Tensor:
         """Generate initial candidates using Sobol sampling with proper onorm_factor handling."""
-        # Generate Sobol samples in [0,1]^3
+        # Generate Sobol samples in [0,1]^3 with consistent dtype
         sobol_samples = draw_sobol_samples(
-            bounds=torch.stack([torch.zeros(3), torch.ones(3)]),
+            bounds=torch.stack([torch.zeros(3, dtype=torch.float64),
+                                torch.ones(3, dtype=torch.float64)]),
             n=n_candidates,
             q=1
         ).squeeze(1)
@@ -44,13 +44,20 @@ class BayesianOptimizer:
         mask_range = ~mask_zero
 
         candidates[mask_zero, 2] = 0.0
-        candidates[mask_range, 2] = 1.0 + 3.0 * (onorm_raw[mask_range] - 0.5) / 0.5
+        # Ensure dtype consistency for the calculation
+        onorm_values = 1.0 + 3.0 * (onorm_raw[mask_range] - 0.5) / 0.5
+        candidates[mask_range, 2] = onorm_values.to(torch.float64)
 
         return candidates
 
-    def load_current_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Load current evaluation data."""
+    def load_current_data(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Load current evaluation data. Returns None if no data available."""
         df = get_loss("meta-bo")
+
+        # Check if DataFrame is empty
+        if df.height == 0:
+            print("No previous evaluation data found.")
+            return None, None
 
         # Convert to torch tensors
         X = torch.tensor(
@@ -94,7 +101,8 @@ class BayesianOptimizer:
         # Optimize acquisition function to get next batch of candidates
         candidates_norm, _ = optimize_acqf(
             acq_function=qLogEI,
-            bounds=torch.stack([torch.zeros(3), torch.ones(3)]),
+            bounds=torch.stack([torch.zeros(3, dtype=torch.float64),
+                                torch.ones(3, dtype=torch.float64)]),
             q=n_candidates,
             num_restarts=20,
             raw_samples=100,
@@ -128,6 +136,14 @@ class BayesianOptimizer:
         try:
             # Load current evaluation data
             X, y = self.load_current_data()
+
+            # Handle case where no data exists yet
+            if X is None or y is None:
+                print("Starting with initial random sampling...")
+                candidates = self.sample_initial_candidates(20)
+                self.save_candidates(candidates)
+                return
+
             print(f"Loaded {len(X)} previous evaluations")
             print(f"Best loss so far: {-y.max().item():.6f}")
 

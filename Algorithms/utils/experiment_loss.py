@@ -1,4 +1,3 @@
-import os
 import polars as pl
 import iohinspector
 
@@ -13,7 +12,16 @@ def get_loss(experiment_dir) -> pl.DataFrame:
         loss (float): Loss value calculated based on ioh data in experiment_dir.
     """
     manager = iohinspector.DataManager()
-    manager.add_folder(experiment_dir)
+
+    try:
+        manager.add_folder(experiment_dir)
+    except FileNotFoundError:
+        return pl.DataFrame({
+            'gpr_p': [],
+            'gpr_val_factor': [],
+            'onorm_factor': [],
+            'loss': []
+        })
 
     cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best', 'current_y_best']
 
