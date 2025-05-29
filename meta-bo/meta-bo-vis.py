@@ -1,12 +1,12 @@
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
+import polars as pl
 
 from Algorithms.utils.experiment_loss import get_loss
 
 df = get_loss("meta-bo")
 
-print(df)
+with pl.Config(tbl_rows=200, tbl_cols=20):
+    print(df)
 
 # Extract data from polars dataframe
 x = df['gpr_p'].to_numpy()

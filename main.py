@@ -105,22 +105,22 @@ def parse_arguments():
     parser.add_argument(
         "--gpr_p",
         type=float,
-        default=0.5,
-        help="Percentage of ranked points to use in GPR fitting (default: 0.5)"
+        default=0.589013,
+        help="Percentage of ranked points to use in GPR fitting (default: 0.589013)"
     )
 
     parser.add_argument(
         "--gpr_val_factor",
         type=float,
-        default=0.5,
-        help="Relative influence of value rank to distance rank in GPR fitting point selection (default: 0.5)"
+        default=0.100655,
+        help="Relative influence of value rank to distance rank in GPR fitting point selection (default: 0.100655)"
     )
 
     parser.add_argument(
         "--onorm_factor",
         type=float,
-        default=2.0,
-        help="O-norm sampling multiplier (default: 2.0)"
+        default=3.027467,
+        help="O-norm sampling multiplier (default: 3.027467)"
     )
 
     parser.add_argument(

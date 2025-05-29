@@ -63,6 +63,7 @@ class ExperimentVisualizer:
 
         self.load_data()
         self.plot_convergence()
+        self.plot_times()
 
     def load_data(self):
         """Load experiment data using IOHinspector."""
@@ -139,26 +140,26 @@ class ExperimentVisualizer:
                     self._plot_individual_convergence(batch_size, dimension, function, ax)
 
                 # Add vertical text labels on the left (one for each dimension)
-                y_pos = 1 - (d_idx + 0.5) / len(dimensions)  # Center vertically for each dimension section
+                y_pos = 1 - (d_idx * 0.95 + 0.5) / len(dimensions)  # Center vertically for each dimension section
                 fig.text(0.02, y_pos, f"f - f* in {dimension}D",
-                         rotation=90, verticalalignment="center", fontsize=12, fontweight="normal")
+                         rotation=90, verticalalignment="center", fontsize=13, fontweight="normal")
 
-                # Add horizontal text label at the bottom
-                fig.text(0.5, 0.04, "iteration", horizontalalignment="center", fontsize=12, fontweight="normal")
+            # Add horizontal text label at the bottom
+            fig.text(0.5, 0.03, "iteration", horizontalalignment="center", fontsize=13, fontweight="normal")
 
-                algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
+            algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
 
-                legend_handles = []
-                for i, algorithm in enumerate(algorithms):
-                    handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
-                    legend_handles.append(handle)
+            legend_handles = []
+            for i, algorithm in enumerate(algorithms):
+                handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
+                legend_handles.append(handle)
 
-                fig.legend(handles=legend_handles, loc='lower center',
-                           bbox_to_anchor=(0.5, 0.01), ncol=len(algorithms),
-                           frameon=False, fontsize=10)
+            fig.legend(handles=legend_handles, loc="lower center",
+                       bbox_to_anchor=(0.5, 0.00), ncol=len(algorithms),
+                       frameon=False, fontsize=10)
 
-                if self.save_figures:
-                    plt.savefig(os.path.join(self.output_dir, f"convergence-b{batch_size}.png"), format="png")
+            if self.save_figures:
+                plt.savefig(os.path.join(self.output_dir, f"convergence-b{batch_size}.png"), format="png")
 
     def _plot_individual_convergence(self, batch_size: int, dimension: int, function: int, ax: plt.Axes):
         """Plot convergence graph for a specific axis.
@@ -291,21 +292,89 @@ class ExperimentVisualizer:
 
         ax.set_title(f"F{function}", fontsize=10, fontweight="normal", pad=3)
 
-    def plot_execution_times(self) -> Optional[plt.Figure]:
-        """Plot execution times for each algorithm, dimension, and function.
+    def plot_times(self):
+        """Plot execution times for each dimension, algorithm, and function."""
 
-        Returns:
-            Matplotlib figure object or None if execution time data is missing.
-        """
-        pass
+        fig_size_margin = (1, 1)
+        fig_size_cell = (7, 8)
 
-    def analyze_algorithm_comparison(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Analyze and compare the performance of Vanilla BO and PCA-BO.
+        batch_sizes = self.batch_sizes or self.data["batch_size"].unique()
+        dimensions = self.dimensions or self.data["dimension"].unique()
+        functions = self.functions or self.data["function_id"].unique()
+
+        fig_size = (fig_size_margin[0] + fig_size_cell[0] * len(dimensions),
+                    fig_size_margin[1] + fig_size_cell[1])
+
+        # Create individual plots for different batch sizes
+        for batch_size in batch_sizes:
+            fig = plt.figure(figsize=fig_size, dpi=self.dpi)
+            fig.subplots_adjust(left=0.10, right=0.97, top=0.97, bottom=0.10)
+
+            # Create a grid of subplots for different dimensions
+            dims_gs = gridspec.GridSpec(1, len(dimensions), wspace=0.05)
+
+            ax0 = None
+            # For each dimension section - fill cells
+            for d_idx, dimension in enumerate(dimensions):
+                ax = fig.add_subplot(dims_gs[0, d_idx])
+                if ax0 is None:
+                    ax0 = ax
+                else:
+                    ax.sharey(ax0)
+
+                # Hide y-axis if not the first in row
+                if d_idx > 0:
+                    ax.tick_params(labelleft=False)
+
+                self._plot_individual_times(batch_size, dimension, ax)
+
+                algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
+
+                legend_handles = []
+                for i, algorithm in enumerate(algorithms):
+                    handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
+                    legend_handles.append(handle)
+
+                fig.legend(handles=legend_handles, loc="lower center",
+                           bbox_to_anchor=(0.5, 0.01), ncol=len(algorithms),
+                           frameon=False, fontsize=10)
+
+                if self.save_figures:
+                    plt.savefig(os.path.join(self.output_dir, f"times-b{batch_size}.png"), format="png")
+
+    def _plot_individual_times(self, batch_size: int, dimension: int, ax: plt.Axes):
+        """Plot convergence graph for a specific axis.
 
         Args:
-            df: DataFrame containing experiment data.
-
-        Returns:
-            pl.DataFrame with comparison statistics.
+            batch_size: Batch size.
+            dimension: Dimension.
+            ax: Matplotlib axis to plot on.
         """
-        pass
+        def integer_or_scientific_formatter(x, pos):
+            if x == 0:
+                return "0"
+            elif x >= 1e4 or x <= 1e-2:
+                # Use compact scientific notation
+                exp = int(np.floor(np.log10(abs(x))))
+                mantissa = x / (10 ** exp)
+                mantissa_rounded = int(round(mantissa))
+                if mantissa_rounded == 1:
+                    return f"$10^{{{exp}}}$"
+                else:
+                    return f"${mantissa_rounded}\\,10^{{{exp}}}$"
+            elif x >= 1e2:
+                return f"{int(round(x))}"
+            else:
+                # For all other numbers, show as integer if close to one, otherwise 1 decimal place
+                if abs(x - round(x)) < 0.05:
+                    return f"{int(round(x))}"
+                else:
+                    return f"{x:.1f}"
+
+        ax.yaxis.set_major_formatter(FuncFormatter(integer_or_scientific_formatter))
+        ax.yaxis.set_minor_formatter(FuncFormatter(lambda x, pos: ''))
+        ax.tick_params(axis="both", labelsize=6, length=2, width=0.5)
+
+        ax.set_facecolor("#f8f8f8")
+        ax.grid(True, color="white", linewidth=1)
+        ax.spines[["top", "right", "bottom", "left"]].set_visible(False)

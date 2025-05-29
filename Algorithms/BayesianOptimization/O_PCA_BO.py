@@ -77,9 +77,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             ortho_samples: int = 3,
             n_components: int = 0,
             var_threshold: float = 0.95,
-            gpr_p: float = 0.5,
-            gpr_val_factor: float = 0.5,
-            onorm_factor: float = 2.0,
+            gpr_p: float = 0.589013,
+            gpr_val_factor: float = 0.100655,
+            onorm_factor: float = 3.027467,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -101,11 +101,12 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             n_components (int, optional): Number of principal components to use. If 0, determined
                                           by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
-            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0.3, 1]. Defaults to 0.5.
+            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting.
+                                     Range [0.3, 1]. Defaults to 0.589013.
             gpr_val_factor (float, optional): Relative influence of value rank to distance rank
-                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.5.
+                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.100655.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
-                                            0 for uniform sampling. Defaults to 2.0.
+                                            0 for uniform sampling. Defaults to 3.027467.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
             torch_config (Dict[str, Any], optional): gpu configuration.

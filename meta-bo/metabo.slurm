@@ -3,7 +3,7 @@
 #SBATCH --output=logs/opcabo_%A_%a.out
 #SBATCH --error=logs/opcabo_%A_%a.err
 #SBATCH --mail-user="lukesuper12@gmail.com"
-#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-type=FAIL
 #SBATCH --partition=cpu-short
 #SBATCH --time=00:10:00
 #SBATCH --ntasks=1
@@ -35,7 +35,7 @@ iid=${iids[$iid_idx]}
 echo "Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Using algo=$algo batch=$batch dim=$dim pid=$pid iid=$iid"
 
-python para-ortho-pca-bo/main.py \
+python main.py \
   --algorithms $algo \
   --batch $batch \
   --dimensions $dim \
