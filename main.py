@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Entry point script for running Bayesian Optimization comparison experiments.
-This script configures and executes experiments comparing Vanilla BO and PCA-BO
+Entry point script for running Bayesian Optimization comparison experiments in multiple processes.
+This script configures and executes experiments comparing Vanilla BO, PCA-BO, and O-PCA-BO
 on benchmark functions from the BBOB suite.
 """
 
@@ -179,7 +179,7 @@ def main():
 
     print(f"\nExperiment completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
     print(f"Results saved to {args.experiment_dir}")
-    print("Run 'python plot_results.py' to visualize the results")
+    print("Run 'python plots.py' to visualize the results")
 
 
 if __name__ == "__main__":

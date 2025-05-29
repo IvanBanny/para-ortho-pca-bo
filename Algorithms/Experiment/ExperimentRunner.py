@@ -161,13 +161,17 @@ class ExperimentRunner:
 
             # Add relevant shared experiment settings
             logger.set_experiment_attributes({
+                "batch_size": f"{batch_size}",
+                **({"var_threshold": self.var_threshold} if algorithm in ["pca", "opca"] else {}),
+                **({"gpr_p": self.gpr_p, "gpr_val_factor": self.gpr_val_factor,
+                    "onorm_factor": self.onorm_factor} if algorithm == "opca" else {}),
                 "budget": f"{budget}",
                 "doe": f"{n_doe}",
                 "acquisition_function": f"{self.acquisition_function}",
                 "random_seed": f"{self.random_seed}",
                 "torch_config": f"dict{self.torch_config}",
                 "doe_params": f"dict{self.doe_params}",
-                "optimum": f"{problem.optimum.y}"
+                "optimum": f"{get_problem(fid=pid, instance=1, dimension=dim).optimum.y}"
             })
 
             # Initialize optimizer based on algorithm type

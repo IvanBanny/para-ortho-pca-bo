@@ -99,7 +99,7 @@ python main.py --dimensions 5 10 20 --functions 15 21 --runs 10 --verbose
 Analyze and visualize experiment results:
 
 ```bash
-python plot_results.py
+python plots.py
 ```
 
 Command-line options:
@@ -115,7 +115,7 @@ Command-line options:
 
 Example:
 ```bash
-python plot_results.py --experiment_dir pca-bo-experiment --functions 15 16 --format pdf
+python plots.py --experiment_dir pca-bo-experiment --functions 15 16 --format pdf
 ```
 
 ## Key Components

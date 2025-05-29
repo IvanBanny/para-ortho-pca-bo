@@ -7,7 +7,7 @@ Vanilla BO and PCA-BO algorithms.
 
 import os
 import argparse
-from Algorithms.Experiment.Visualization import ExperimentVisualizer
+from Algorithms import ExperimentVisualizer
 
 
 def parse_arguments():
@@ -19,15 +19,31 @@ def parse_arguments():
     parser.add_argument(
         "--experiment_dir",
         type=str,
-        default="pca-bo-experiment",
-        help="Directory containing experiment data (default: pca-bo-experiment)"
+        default="experiment",
+        help="Directory containing experiment data (default: experiment)"
     )
 
     parser.add_argument(
         "--output_dir",
         type=str,
+        default="visualizations",
+        help="Directory to save visualization outputs (default: ./visualizations)"
+    )
+
+    parser.add_argument(
+        "--algorithms",
+        type=str,
+        nargs="+",
         default=None,
-        help="Directory to save visualization outputs (default: experiment_dir/visualizations)"
+        help="Algorithms to analyze (default: all found in data)"
+    )
+
+    parser.add_argument(
+        "--batches",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Batch sizes to analyze (default: all found in data)"
     )
 
     parser.add_argument(
@@ -53,14 +69,6 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--format",
-        type=str,
-        default="png",
-        choices=["png", "pdf", "svg"],
-        help="Output file format for visualizations (default: png)"
-    )
-
-    parser.add_argument(
         "--dpi",
         type=int,
         default=300,
@@ -80,37 +88,34 @@ def main():
         print("Please run 'python main.py' first to generate experiment data.")
         return
 
-    # Set up output directory
-    output_dir = args.output_dir
-    if output_dir is None:
-        output_dir = os.path.join(args.experiment_dir, "visualizations")
-
     # Initialize visualizer
     visualizer = ExperimentVisualizer(
         experiment_dir=args.experiment_dir,
+        algorithms=args.algorithms,
+        batch_sizes=args.batches,
         dimensions=args.dimensions,
         functions=args.functions,
-        output_dir=output_dir,
         save_figures=not args.no_save,
-        file_format=args.format,
+        output_dir=args.output_dir,
         dpi=args.dpi
     )
 
-    print("Bayesian Optimization Visualization Configuration:")
+    print("\nBayesian Optimization Visualization Configuration:")
     print(f"  Experiment directory: {args.experiment_dir}")
-    print(f"  Output directory: {output_dir}")
+    print(f"  Output directory: {visualizer.output_dir}")
+    print(f"  Batch sizes: {args.algorithms or 'all'}")
+    print(f"  Batch sizes: {args.batches or 'all'}")
     print(f"  Dimensions: {args.dimensions or 'all'}")
     print(f"  Functions: {args.functions or 'all'}")
     print(f"  Save figures: {not args.no_save}")
-    print(f"  File format: {args.format}")
     print(f"  DPI: {args.dpi}\n")
 
     # Create visualizations
-    visualizer.create_all_visualizations()
+    visualizer.plot_all()
 
-    print("\nVisualization completed successfully!")
+    print("Visualization completed successfully!")
     if not args.no_save:
-        print(f"All visualizations saved to {output_dir}")
+        print(f"All visualizations saved to {visualizer.output_dir}\n")
 
 
 if __name__ == "__main__":

@@ -1,107 +1,255 @@
 """Visualization module for Bayesian Optimization experiments.
 
 This module provides tools for loading, analyzing, and visualizing
-the results of experiments comparing Vanilla BO and PCA-BO algorithms.
+the results of experiments comparing Vanilla BO, PCA-BO, and O-PCA-BO algorithms.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Optional
 import os
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
-import ioh
-from iohinspector import DataManager
+import numpy as np
+from scipy import stats
 import polars as pl
+import iohinspector
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+import matplotlib.gridspec as gridspec
 
 
 class ExperimentVisualizer:
-    """Class to visualize and analyze experimental results from Bayesian Optimization algorithms.
+    """Class to visualize and analyze experimental results from Bayesian Optimization algorithms."""
 
-    Attributes:
-        experiment_dir (str): Directory containing experiment data.
-        dimensions (List[int]): List of problem dimensions used in the experiment.
-        functions (List[int]): List of function IDs used in the experiment.
-        output_dir (str): Directory to save visualization outputs.
-        manager (DataManager): IOHinspector data manager.
-        save_figures (bool): Whether to save generated figures.
-        file_format (str): Output file format for saved figures.
-        dpi (int): DPI for raster output formats.
-    """
-
-    def _init_(
+    def __init__(
             self,
             experiment_dir: str,
+            algorithms: Optional[List[str]] = None,
+            batch_sizes: Optional[List[int]] = None,
             dimensions: Optional[List[int]] = None,
             functions: Optional[List[int]] = None,
-            output_dir: Optional[str] = None,
+            ci: float = 0.95,
             save_figures: bool = True,
-            file_format: str = "png",
+            output_dir: str = "visualizations",
             dpi: int = 300
     ):
         """Initialize the experiment visualizer.
 
         Args:
             experiment_dir: Directory containing experiment data.
-            dimensions: List of problem dimensions to analyze (None for all).
-            functions: List of function IDs to analyze (None for all).
-            output_dir: Directory to save visualization outputs (None to use experiment_dir/visualizations).
+            algorithms: Algorithms to plot (None for all).
+            batch_sizes: Batch sizes to plot (None for all).
+            dimensions: List of problem dimensions to plot (None for all).
+            functions: List of function IDs to plot (None for all).
+            ci: Confidence interval. Defaults to 95%.
             save_figures: Whether to save generated figures.
-            file_format: Output file format for saved figures (png, pdf, svg).
+            output_dir: Directory to save visualization outputs. Defaults to "./visualizations".
             dpi: DPI for raster output formats.
         """
         self.experiment_dir = experiment_dir
+        self.algorithms = algorithms
+        self.batch_sizes = batch_sizes
         self.dimensions = dimensions
         self.functions = functions
-        self.output_dir = output_dir or os.path.join(experiment_dir, 'visualizations')
+        self.ci = ci
         self.save_figures = save_figures
-        self.file_format = file_format
+        self.output_dir = output_dir
         self.dpi = dpi
 
-    def create_all_visualizations(self) -> None:
-        """Create all visualizations for the experiment data."""
-        pass
+        self.data = None
 
-    def load_data(self, make_monotonic: bool = True, include_metadata: bool = True) -> pl.DataFrame:
-        """Load experiment data using IOHinspector.
+        self.colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+                       '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
+
+    def plot_all(self) -> None:
+        """Create all plots for the experiment data."""
+
+        self.load_data()
+        self.plot_convergence()
+
+    def load_data(self):
+        """Load experiment data using IOHinspector."""
+
+        manager = iohinspector.DataManager()
+        manager.add_folder(self.experiment_dir)
+
+        cols = ['data_id', 'algorithm_name', 'batch_size', 'function_id',
+                'dimension', 'instance', 'evals', 'best_y', 'budget', 'random_seed',
+                'optimum', 'doe', 'evaluations', 'raw_y', 'raw_y_best']
+
+        self.data = pl.concat([
+            manager.select(algorithms=[algo], dimensions=[dim]).load(False, True)
+            .filter(
+                (pl.col("algorithm_name").is_in(self.algorithms) if self.algorithms is not None else pl.lit(True)) &
+                (pl.col("batch_size").is_in(self.batch_sizes) if self.batch_sizes is not None else pl.lit(True)) &
+                (pl.col("dimension").is_in(self.dimensions) if self.dimensions is not None else pl.lit(True)) &
+                (pl.col("function_id").is_in(self.functions) if self.functions is not None else pl.lit(True))
+            )
+            .select(cols)
+            .drop_nulls()
+            for algo in manager.overview["algorithm_name"].unique().to_list()
+            for dim in self.dimensions or manager.overview["dimension"].unique().to_list()
+        ])
+
+    def plot_convergence(self):
+        """Plot convergence graphs per batch sizes, per dimension, per function."""
+
+        max_row_len = 5
+        fig_size_margin = (1, 1)
+        fig_size_cell = (2, 2.25)
+
+        batch_sizes = self.batch_sizes or self.data["batch_size"].unique()
+        dimensions = self.dimensions or self.data["dimension"].unique()
+        functions = self.functions or self.data["function_id"].unique()
+
+        row_len = min(max_row_len, len(functions))
+        rows_per_dim = (len(functions) + row_len - 1) // row_len
+        col_len = rows_per_dim * len(dimensions)
+
+        fig_size = (fig_size_margin[0] + fig_size_cell[0] * row_len,
+                    fig_size_margin[1] + fig_size_cell[1] * col_len)
+
+        # Create individual plots for different batch sizes
+        for batch_size in batch_sizes:
+            fig = plt.figure(figsize=fig_size, dpi=self.dpi)
+            fig.subplots_adjust(left=0.08, right=0.97, top=0.95, bottom=0.09)
+
+            # Create a grid of subplots for different dimensions
+            dims_gs = gridspec.GridSpec(len(dimensions), 1, hspace=0.2)
+
+            # For each dimension section - fill cells
+            for d_idx, dimension in enumerate(dimensions):
+                gs = gridspec.GridSpecFromSubplotSpec(rows_per_dim, row_len, dims_gs[d_idx, 0],
+                                                      hspace=0.1, wspace=0.2)
+                first_ax_per_row = dict()
+                # For each cell - add subplot to the dimension section gs
+                for f_idx, function in enumerate(functions):
+                    row, col = f_idx // row_len, f_idx % row_len
+
+                    if row not in first_ax_per_row:
+                        ax = fig.add_subplot(gs[row, col])
+                        first_ax_per_row[row] = ax
+                    else:
+                        ax = fig.add_subplot(gs[row, col], sharex=first_ax_per_row[row])
+
+                    self._plot_individual_convergence(batch_size, dimension, function, ax)
+
+                # Add vertical text labels on the left (one for each dimension)
+                y_pos = 1 - (d_idx + 0.5) / len(dimensions)  # Center vertically for each dimension section
+                fig.text(0.02, y_pos, f"f - f* in {dimension}D",
+                         rotation=90, verticalalignment="center", fontsize=12, fontweight="normal")
+
+                # Add horizontal text label at the bottom
+                fig.text(0.5, 0.04, "iteration", horizontalalignment="center", fontsize=12, fontweight="normal")
+
+                algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
+
+                legend_handles = []
+                for i, algorithm in enumerate(algorithms):
+                    handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
+                    legend_handles.append(handle)
+
+                fig.legend(handles=legend_handles, loc='lower center',
+                           bbox_to_anchor=(0.5, -0.01), ncol=len(algorithms),
+                           frameon=False, fontsize=10)
+
+                if self.save_figures:
+                    plt.savefig(os.path.join(self.output_dir, f"convergence-b{batch_size}.png"), format="png")
+
+    def _plot_individual_convergence(self, batch_size: int, dimension: int, function: int, ax: plt.Axes):
+        """Plot convergence graph for a specific axis.
 
         Args:
-            make_monotonic: Whether to make the performance data monotonic.
-            include_metadata: Whether to include metadata in the loaded data.
-
-        Returns:
-            DataFrame containing the loaded data.
-        """
-        pass
-
-    def plot_convergence_by_dimension(
-            self,
-            df: pl.DataFrame
-    ) -> Dict[int, plt.Figure]:
-        """Plot convergence graphs for each dimension, showing all functions.
-
-        Args:
-            df: DataFrame with experiment data.
-
-        Returns:
-            Dictionary mapping dimensions to figure objects.
-        """
-        pass
-
-    def _plot_function_convergence(
-            self,
-            func_data: pl.DataFrame,
-            ax: plt.Axes
-    ) -> pd.DataFrame:
-        """Plot convergence graph for a specific function on a given axis.
-
-        Args:
-            func_data: DataFrame containing data for a specific function.
+            batch_size: Batch size.
+            dimension: Dimension.
+            function: Function ID.
             ax: Matplotlib axis to plot on.
-
-        Returns:
-            DataFrame used for the plot.
         """
-        pass
+
+        df = self.data.filter(
+            (pl.col("batch_size") == batch_size) &
+            (pl.col("dimension") == dimension) &
+            (pl.col("function_id") == function)
+        )
+
+        stats_df = (
+            df
+            .with_columns([
+                (pl.col("raw_y_best") - pl.col("optimum")).alias("adjusted_y")
+            ])
+            .group_by(["algorithm_name", "evaluations"])
+            .agg([
+                pl.col("adjusted_y").mean().alias("mean_y"),
+                pl.col("adjusted_y").std().alias("std_y"),
+                pl.col("adjusted_y").count().alias("n_runs"),
+            ])
+            .with_columns([
+                # Calculate margin of error for 95% CI using t-distribution
+                pl.when(pl.col("n_runs") > 1)
+                .then(
+                    pl.col("std_y") / pl.col("n_runs").sqrt() *
+                    pl.col("n_runs").map_elements(
+                        lambda n: stats.t.ppf(0.5 + self.ci / 2, df=n-1), return_dtype=pl.Float64
+                    )
+                )
+                .otherwise(0.0)
+                .alias("margin_error")
+            ])
+            .sort(["algorithm_name", "evaluations"])
+        )
+
+        algorithms = self.algorithms or stats_df["algorithm_name"].unique().sort().to_list()
+
+        for i, algorithm in enumerate(algorithms):
+            algo_data = stats_df.filter(pl.col("algorithm_name") == algorithm)
+
+            x = algo_data["evaluations"].to_list()
+            y = algo_data["mean_y"].to_list()
+            margin = algo_data["margin_error"].to_list()
+
+            lower = [y_val - m for y_val, m in zip(y, margin)]
+            upper = [y_val + m for y_val, m in zip(y, margin)]
+
+            ax.plot(x, y, c=self.colors[i], label=algorithm, linewidth=0.5)
+            ax.fill_between(x, lower, upper, color=self.colors[i], alpha=0.2)
+
+        def scientific_formatter(x, pos):
+            if x == 0:
+                return '0'
+            elif x >= 1e4 or x <= 1e-2:
+                exp = int(np.floor(np.log10(abs(x))))
+                return f'$10^{{{exp}}}$'
+            else:
+                return f'{x:g}'
+
+        ax.set_yscale('log')
+
+        # # Calculate y-axis limits with 5% margin
+        # if len(stats_df) > 0:
+        #     bounds_df = stats_df.with_columns([
+        #         (pl.col("mean_y") - pl.col("margin_error")).alias("lower_bound"),
+        #         (pl.col("mean_y") + pl.col("margin_error")).alias("upper_bound")
+        #     ])
+        #
+        #     y_min = bounds_df["lower_bound"].min()
+        #     y_max = bounds_df["upper_bound"].max()
+        #
+        #     if y_min > 0 and y_max > 0:  # Ensure positive values for log scale
+        #         # Add 5% margin on log scale
+        #         log_range = np.log10(y_max) - np.log10(y_min)
+        #         margin = 0.05 * log_range
+        #
+        #         y_min_with_margin = 10 ** (np.log10(y_min) - margin)
+        #         y_max_with_margin = 10 ** (np.log10(y_max) + margin)
+        #
+        #         ax.set_ylim(y_min_with_margin, y_max_with_margin)
+
+        ax.yaxis.set_major_formatter(FuncFormatter(scientific_formatter))
+        ax.yaxis.set_minor_formatter(FuncFormatter(lambda x, pos: ''))
+        ax.tick_params(axis="both", labelsize=6, length=2, width=0.5)
+
+        ax.set_facecolor("#f8f8f8")
+        ax.grid(True, color="white", linewidth=1)
+        ax.spines[["top", "right", "bottom", "left"]].set_visible(False)
+
+        ax.set_title(f"F{function}", fontsize=10, fontweight="normal", pad=3)
 
     def plot_execution_times(self) -> Optional[plt.Figure]:
         """Plot execution times for each algorithm, dimension, and function.
@@ -111,13 +259,13 @@ class ExperimentVisualizer:
         """
         pass
 
-    def analyze_algorithm_comparison(self, df: pl.DataFrame) -> pd.DataFrame:
+    def analyze_algorithm_comparison(self, df: pl.DataFrame) -> pl.DataFrame:
         """Analyze and compare the performance of Vanilla BO and PCA-BO.
 
         Args:
             df: DataFrame containing experiment data.
 
         Returns:
-            DataFrame with comparison statistics.
+            pl.DataFrame with comparison statistics.
         """
         pass
