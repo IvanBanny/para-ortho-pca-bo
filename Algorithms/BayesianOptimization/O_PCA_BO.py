@@ -101,8 +101,8 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             n_components (int, optional): Number of principal components to use. If 0, determined
                                           by var_threshold. Defaults to 0.
             var_threshold (float, optional): Variance threshold for selecting components. Defaults to 0.95.
-            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0, 1]. Defaults to 0.5.
-            gpr_val_factor (float, optional): relative influence of value rank to distance rank
+            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0.3, 1]. Defaults to 0.5.
+            gpr_val_factor (float, optional): Relative influence of value rank to distance rank
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.5.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 2.0.

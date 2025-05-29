@@ -10,7 +10,7 @@ import os
 import sys
 import traceback
 from time import perf_counter
-from tqdm.auto import tqdm
+# from tqdm.auto import tqdm
 import joblib
 from joblib import Parallel, delayed
 
@@ -79,8 +79,8 @@ class ExperimentRunner:
             random_seed: Randomness seed.
             acquisition_function: Acquisition function name.
             var_threshold: PCA variance threshold.
-            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0, 1]. Defaults to 0.5.
-            gpr_val_factor (float, optional): relative influence of value rank to distance rank
+            gpr_p (float, optional): Percentage of ranked points to use in GPR fitting. Range [0.3, 1]. Defaults to 0.5.
+            gpr_val_factor (float, optional): Relative influence of value rank to distance rank
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.5.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 2.0.
@@ -171,7 +171,6 @@ class ExperimentRunner:
                 "random_seed": f"{self.random_seed}",
                 "torch_config": f"dict{self.torch_config}",
                 "doe_params": f"dict{self.doe_params}",
-                "optimum": f"{get_problem(fid=pid, instance=1, dimension=dim).optimum.y}"
             })
 
             # Initialize optimizer based on algorithm type
@@ -218,7 +217,7 @@ class ExperimentRunner:
                           file=sys.stderr)
 
     def _create_optimizer(self, algorithm: str, batch_size: int, budget: int,
-                         n_doe: int, maximization: bool):
+                          n_doe: int, maximization: bool):
         """Create optimizer instance based on algorithm type.
 
         Args:

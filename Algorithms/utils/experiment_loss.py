@@ -2,11 +2,8 @@ import os
 import polars as pl
 import iohinspector
 
-# import warnings
-# warnings.filterwarnings("ignore", category=UserWarning, module="iohinspector")
 
-
-def get_loss(experiment_dir) -> float:
+def get_loss(experiment_dir) -> pl.DataFrame:
     """Calculate experiment loss (less = better) based on ioh data in experiment_dir.
 
     Args:
@@ -18,8 +15,10 @@ def get_loss(experiment_dir) -> float:
     manager = iohinspector.DataManager()
     manager.add_folder(experiment_dir)
 
-    df = manager.select(dimensions=[10]).load(False, True)
-    df = df.select(["data_id", "doe", "current_y", "current_y_best", "optimum"]).drop_nulls()
+    cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best', 'current_y_best']
+
+    df = pl.concat([manager.select(dimensions=[d]).load(False, True)
+                   .select(cols).drop_nulls() for d in manager.overview["dimension"].unique().to_list()])
 
     df_with_row_num = (
         df.sort(["data_id"])  # Ensure consistent ordering
@@ -32,8 +31,8 @@ def get_loss(experiment_dir) -> float:
     experiment_info = (
         df_with_row_num
         .filter(pl.col("iteration") == pl.col("doe") - 1)  # Get row at doe position
-        .select(["data_id", "current_y_best", "optimum"])
-        .rename({"current_y_best": "f_init", "optimum": "f_opt"})
+        .select(["data_id", "current_y_best"])
+        .rename({"current_y_best": "f_init"})
     )
 
     # Join back to get f_init and f_opt for all rows
@@ -41,30 +40,26 @@ def get_loss(experiment_dir) -> float:
 
     # Calculate normalized gaps
     df_normalized = df_enriched.with_columns([
-        ((pl.col("current_y_best") - pl.col("f_opt")) /
-         (pl.col("f_init") - pl.col("f_opt"))).alias("normalized_gap")
+        (pl.col("current_y_best") / pl.col("f_init")).alias("normalized_gap")
     ])
 
-    # Calculate metrics per experiment
-    metrics = (
+    weight_auc = 0.7
+    weight_final = 0.3
+
+    return (
         df_normalized
         .filter(pl.col("iteration") >= pl.col("doe"))  # Only BO iterations
         .group_by("data_id")
         .agg([
-            # AUC approximation (mean of normalized gaps during BO phase)
-            pl.col("normalized_gap").mean().alias("normalized_auc"),
-            # Final gap
-            pl.col("normalized_gap").last().alias("normalized_final_gap")
+            pl.col("gpr_p").first(),
+            pl.col("gpr_val_factor").first(),
+            pl.col("onorm_factor").first(),
+            # Loss
+            (weight_auc * pl.col("normalized_gap").mean() +
+             weight_final * pl.col("normalized_gap").last()).alias("loss")
+        ])
+        .group_by("gpr_p", "gpr_val_factor", "onorm_factor")
+        .agg([
+            pl.col("loss").mean()
         ])
     )
-
-    # Combine metrics
-    weight_auc = 0.7
-    weight_final = 0.3
-
-    final_metrics = metrics.with_columns(
-        (weight_auc * pl.col("normalized_auc") +
-         weight_final * pl.col("normalized_final_gap")).alias("combined_loss")
-    )
-
-    return final_metrics["combined_loss"].mean()

@@ -103,6 +103,27 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--gpr_p",
+        type=float,
+        default=0.5,
+        help="Percentage of ranked points to use in GPR fitting (default: 0.5)"
+    )
+
+    parser.add_argument(
+        "--gpr_val_factor",
+        type=float,
+        default=0.5,
+        help="Relative influence of value rank to distance rank in GPR fitting point selection (default: 0.5)"
+    )
+
+    parser.add_argument(
+        "--onorm_factor",
+        type=float,
+        default=2.0,
+        help="O-norm sampling multiplier (default: 2.0)"
+    )
+
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output"
@@ -145,6 +166,9 @@ def main():
         random_seed=69,
         acquisition_function=args.acquisition,
         var_threshold=args.var_threshold,
+        gpr_p=args.gpr_p,
+        gpr_val_factor=args.gpr_val_factor,
+        onorm_factor=args.onorm_factor,
         root_dir=os.getcwd(),
         experiment_name=args.experiment_dir,
         torch_config={

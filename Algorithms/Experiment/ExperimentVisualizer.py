@@ -71,8 +71,8 @@ class ExperimentVisualizer:
         manager.add_folder(self.experiment_dir)
 
         cols = ['data_id', 'algorithm_name', 'batch_size', 'function_id',
-                'dimension', 'instance', 'evals', 'best_y', 'budget', 'random_seed',
-                'optimum', 'doe', 'evaluations', 'raw_y', 'raw_y_best']
+                'dimension', 'instance', 'evals', 'best_y', 'budget',
+                'random_seed', 'doe', 'evaluations', 'raw_y', 'raw_y_best']
 
         self.data = pl.concat([
             manager.select(algorithms=[algo], dimensions=[dim]).load(False, True)
@@ -109,25 +109,32 @@ class ExperimentVisualizer:
         # Create individual plots for different batch sizes
         for batch_size in batch_sizes:
             fig = plt.figure(figsize=fig_size, dpi=self.dpi)
-            fig.subplots_adjust(left=0.08, right=0.97, top=0.95, bottom=0.09)
+            fig.subplots_adjust(left=0.08, right=0.97, top=0.97, bottom=0.07)
 
             # Create a grid of subplots for different dimensions
-            dims_gs = gridspec.GridSpec(len(dimensions), 1, hspace=0.2)
+            dims_gs = gridspec.GridSpec(len(dimensions), 1, hspace=0.15)
 
             # For each dimension section - fill cells
             for d_idx, dimension in enumerate(dimensions):
                 gs = gridspec.GridSpecFromSubplotSpec(rows_per_dim, row_len, dims_gs[d_idx, 0],
-                                                      hspace=0.1, wspace=0.2)
-                first_ax_per_row = dict()
+                                                      hspace=0.15, wspace=0.2)
+
                 # For each cell - add subplot to the dimension section gs
                 for f_idx, function in enumerate(functions):
                     row, col = f_idx // row_len, f_idx % row_len
+                    ax = fig.add_subplot(gs[row, col])
 
-                    if row not in first_ax_per_row:
-                        ax = fig.add_subplot(gs[row, col])
-                        first_ax_per_row[row] = ax
-                    else:
-                        ax = fig.add_subplot(gs[row, col], sharex=first_ax_per_row[row])
+                    # Find if this is the last plot in its column
+                    is_last_in_column = True
+                    for check_f_idx in range(f_idx + 1, len(functions)):
+                        check_row, check_col = check_f_idx // row_len, check_f_idx % row_len
+                        if check_col == col:
+                            is_last_in_column = False
+                            break
+
+                    # Hide x-axis if not the last in column
+                    if not is_last_in_column:
+                        ax.tick_params(labelbottom=False)
 
                     self._plot_individual_convergence(batch_size, dimension, function, ax)
 
@@ -147,7 +154,7 @@ class ExperimentVisualizer:
                     legend_handles.append(handle)
 
                 fig.legend(handles=legend_handles, loc='lower center',
-                           bbox_to_anchor=(0.5, -0.01), ncol=len(algorithms),
+                           bbox_to_anchor=(0.5, 0.01), ncol=len(algorithms),
                            frameon=False, fontsize=10)
 
                 if self.save_figures:
@@ -171,14 +178,11 @@ class ExperimentVisualizer:
 
         stats_df = (
             df
-            .with_columns([
-                (pl.col("raw_y_best") - pl.col("optimum")).alias("adjusted_y")
-            ])
             .group_by(["algorithm_name", "evaluations"])
             .agg([
-                pl.col("adjusted_y").mean().alias("mean_y"),
-                pl.col("adjusted_y").std().alias("std_y"),
-                pl.col("adjusted_y").count().alias("n_runs"),
+                pl.col("raw_y_best").mean().alias("mean_y"),
+                pl.col("raw_y_best").std().alias("std_y"),
+                pl.col("raw_y_best").count().alias("n_runs"),
             ])
             .with_columns([
                 # Calculate margin of error for 95% CI using t-distribution
@@ -210,38 +214,74 @@ class ExperimentVisualizer:
             ax.plot(x, y, c=self.colors[i], label=algorithm, linewidth=0.5)
             ax.fill_between(x, lower, upper, color=self.colors[i], alpha=0.2)
 
-        def scientific_formatter(x, pos):
-            if x == 0:
-                return '0'
-            elif x >= 1e4 or x <= 1e-2:
-                exp = int(np.floor(np.log10(abs(x))))
-                return f'$10^{{{exp}}}$'
-            else:
-                return f'{x:g}'
-
         ax.set_yscale('log')
 
-        # # Calculate y-axis limits with 5% margin
-        # if len(stats_df) > 0:
-        #     bounds_df = stats_df.with_columns([
-        #         (pl.col("mean_y") - pl.col("margin_error")).alias("lower_bound"),
-        #         (pl.col("mean_y") + pl.col("margin_error")).alias("upper_bound")
-        #     ])
-        #
-        #     y_min = bounds_df["lower_bound"].min()
-        #     y_max = bounds_df["upper_bound"].max()
-        #
-        #     if y_min > 0 and y_max > 0:  # Ensure positive values for log scale
-        #         # Add 5% margin on log scale
-        #         log_range = np.log10(y_max) - np.log10(y_min)
-        #         margin = 0.05 * log_range
-        #
-        #         y_min_with_margin = 10 ** (np.log10(y_min) - margin)
-        #         y_max_with_margin = 10 ** (np.log10(y_max) + margin)
-        #
-        #         ax.set_ylim(y_min_with_margin, y_max_with_margin)
+        # Calculate y-axis limits with 5% margin
+        if len(stats_df) > 0:
+            bounds_df = stats_df.with_columns([
+                (pl.col("mean_y") - pl.col("margin_error")).alias("lower_bound"),
+                (pl.col("mean_y") + pl.col("margin_error")).alias("upper_bound")
+            ])
 
-        ax.yaxis.set_major_formatter(FuncFormatter(scientific_formatter))
+            y_min = bounds_df["lower_bound"].min()
+            y_max = bounds_df["upper_bound"].max()
+
+            if y_min > 0 and y_max > 0:  # Ensure positive values for log scale
+                # Add 5% margin on log scale
+                log_range = np.log10(y_max) - np.log10(y_min)
+                margin = 0.05 * log_range
+
+                y_min_with_margin = 10 ** (np.log10(y_min) - margin)
+                y_max_with_margin = 10 ** (np.log10(y_max) + margin)
+
+                ax.set_ylim(y_min_with_margin, y_max_with_margin)
+
+        # # Let matplotlib set automatic limits
+        # ax.relim()
+        # ax.autoscale()
+
+        # Check how many ticks matplotlib generated
+        current_ticks = ax.get_yticks()
+        visible_ticks = [tick for tick in current_ticks if ax.get_ylim()[0] <= tick <= ax.get_ylim()[1]]
+
+        # If we don't have at least 3 visible ticks, generate our own
+        if len(visible_ticks) < 3:
+            y_min, y_max = ax.get_ylim()
+
+            # Generate 4 evenly spaced ticks in log space
+            log_min = np.log10(y_min)
+            log_max = np.log10(y_max)
+
+            # Create 4 evenly spaced points in log space
+            log_ticks = np.linspace(log_min, log_max, 4)
+            ticks = [10 ** log_tick for log_tick in log_ticks]
+
+            ax.set_yticks(ticks)
+
+            # Format ticks as integers if they're reasonable integers, otherwise use scientific
+
+        def integer_or_scientific_formatter(x, pos):
+            if x == 0:
+                return "0"
+            elif x >= 1e4 or x <= 1e-2:
+                # Use compact scientific notation
+                exp = int(np.floor(np.log10(abs(x))))
+                mantissa = x / (10 ** exp)
+                mantissa_rounded = int(round(mantissa))
+                if mantissa_rounded == 1:
+                    return f"$10^{{{exp}}}$"
+                else:
+                    return f"${mantissa_rounded}\\,10^{{{exp}}}$"
+            elif x >= 1e2:
+                return f"{int(round(x))}"
+            else:
+                # For all other numbers, show as integer if close to one, otherwise 1 decimal place
+                if abs(x - round(x)) < 0.05:
+                    return f"{int(round(x))}"
+                else:
+                    return f"{x:.1f}"
+
+        ax.yaxis.set_major_formatter(FuncFormatter(integer_or_scientific_formatter))
         ax.yaxis.set_minor_formatter(FuncFormatter(lambda x, pos: ''))
         ax.tick_params(axis="both", labelsize=6, length=2, width=0.5)
 
