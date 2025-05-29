@@ -69,15 +69,15 @@ def parse_arguments():
     parser.add_argument(
         "--budget_factor",
         type=int,
-        default=10,
-        help="Budget factor for problem evaluations: budget = budget_factor * dim + 50 (default: 10)"
+        default=15,
+        help="Budget factor for problem evaluations: budget = budget_factor * dim + 50 (default: 15)"
     )
 
     parser.add_argument(
         "--doe_factor",
         type=int,
-        default=3,
-        help="Factor for initial design size: n_doe = doe_factor * dim (default: 3)"
+        default=4,
+        help="Factor for initial design size: n_doe = doe_factor * dim (default: 4)"
     )
 
     parser.add_argument(

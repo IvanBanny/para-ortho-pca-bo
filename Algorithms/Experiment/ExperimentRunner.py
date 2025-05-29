@@ -52,8 +52,8 @@ class ExperimentRunner:
         problem_ids: List[int],
         instances: Optional[List[int]] = None,
         num_runs: Optional[int] = None,
-        budget_factor: int = 10,
-        doe_factor: float = 3.0,
+        budget_factor: int = 15,
+        doe_factor: int = 4,
         random_seed: int = 69,
         acquisition_function: str = "EI",
         var_threshold: float = 0.95,
@@ -142,7 +142,7 @@ class ExperimentRunner:
             problem = get_problem(fid=pid, instance=instance, dimension=dim)
             maximization = bool(problem.meta_data.optimization_type.value)
             budget = self.budget_factor * dim + 50
-            n_doe = int(self.doe_factor * dim)
+            n_doe = self.doe_factor * dim
 
             if self.verbose:
                 print(f"\nRunning {run_id}:\n")
