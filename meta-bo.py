@@ -1,5 +1,5 @@
 import os
-from torch import double
+import torch
 from skopt import gp_minimize
 from skopt.space import Real, Categorical
 from skopt.utils import use_named_args
@@ -45,8 +45,8 @@ def objective(gpr_p, gpr_val_factor, use_onorm, onorm_value):
         root_dir=os.getcwd(),
         experiment_name=f"meta-bo/{eval_cnt}",
         torch_config={
-            "device": "cpu",
-            "dtype": double,
+            "device": torch.device("cpu"),
+            "dtype": torch.double,
             "NUM_RESTARTS": 20,
             "RAW_SAMPLES": 4096,
             "OPTIMIZE_ACQF_OPTIONS": {"maxiter": 100, "method": "L-BFGS-B"}

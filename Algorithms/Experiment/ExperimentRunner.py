@@ -162,9 +162,9 @@ class ExperimentRunner:
             # Add relevant shared experiment settings
             logger.set_experiment_attributes({
                 "batch_size": f"{batch_size}",
-                **({"var_threshold": self.var_threshold} if algorithm in ["pca", "opca"] else {}),
-                **({"gpr_p": self.gpr_p, "gpr_val_factor": self.gpr_val_factor,
-                    "onorm_factor": self.onorm_factor} if algorithm == "opca" else {}),
+                **({"var_threshold": f"{self.var_threshold}"} if algorithm in ["pca", "opca"] else {}),
+                **({"gpr_p": f"{self.gpr_p}", "gpr_val_factor": f"{self.gpr_val_factor}",
+                    "onorm_factor": f"{self.onorm_factor}"} if algorithm == "opca" else {}),
                 "budget": f"{budget}",
                 "doe": f"{n_doe}",
                 "acquisition_function": f"{self.acquisition_function}",
