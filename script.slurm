@@ -7,9 +7,17 @@
 #SBATCH --mem=2G
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --array=1-24
+#SBATCH --array=1-72
 #SBATCH --time=24:00:00
 
 conda activate myenv
 
-python main.py --experiment_dir EXPERIMENT6-$SLURM_ARRAY_TASK_ID --verbose --problems $SLURM_ARRAY_TASK_ID --dimensions 10 20 40 --runs 10
+# Define dimensions array
+DIMS=(10 20 40)
+
+# Calculate problem and dimension indices
+PROBLEM_ID=$(( (($SLURM_ARRAY_TASK_ID - 1) / 3) + 1 ))
+DIM_INDEX=$(( ($SLURM_ARRAY_TASK_ID - 1) % 3 ))
+DIMENSION=${DIMS[$DIM_INDEX]}
+
+python main.py --experiment_dir EXPERIMENT7-${PROBLEM_ID}-${DIMENSION}D --problems $PROBLEM_ID --dimensions $DIMENSION --runs 10

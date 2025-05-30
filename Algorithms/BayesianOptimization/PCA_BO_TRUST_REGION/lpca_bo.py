@@ -74,7 +74,7 @@ class CleanLPCABO(CleanPCABO):
                 distances[i] = dist_to_bounds
 
             # Get indices of the n closest points to the trust region
-            closest_indices = np.argsort(distances)[:2]
+            closest_indices = np.argsort(distances)[:min_num_points]
 
             # Update mask to include these n closest points
             mask[closest_indices] = True
