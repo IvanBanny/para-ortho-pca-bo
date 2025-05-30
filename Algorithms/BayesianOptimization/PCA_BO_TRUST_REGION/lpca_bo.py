@@ -10,12 +10,14 @@ import math
 import numpy
 import numpy as np
 import torch
+from botorch import fit_gpytorch_mll
 from botorch.models import SingleTaskGP
 from botorch.models.transforms import Standardize, Normalize
+from gpytorch import ExactMarginalLogLikelihood
 from gpytorch.kernels import MaternKernel
 from numpy.linalg import norm
 
-from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, MyPCA
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, MyPCA, DOE
 
 
 class CleanLPCABO(CleanPCABO):
@@ -32,8 +34,8 @@ class CleanLPCABO(CleanPCABO):
         self.fX = np.zeros(0)
         self.failcount = 0
         self.succcount = 0
-        self.succtol = 3
-        self.failtol = 3
+        self.succtol = 3 # expand tr
+        self.failtol = 3 # shrink tr
         self.length = self.length_init
 
         [self.eval_at(point, check_tr_bounds=False) for point in self.doe.get_points(self.bounds) if self.budget > self.function_evaluation_count]
@@ -95,6 +97,25 @@ class CleanLPCABO(CleanPCABO):
             maximization=self.maximization
         )
 
+    # def create_gpr_model(self, points_z, z_bounds):
+    #     in_tr = self.filter_points()
+    #     points_z_tr = points_z[in_tr]
+    #     fX_tr = self.fX[in_tr]
+    #     model = SingleTaskGP(
+    #         torch.from_numpy(points_z_tr),
+    #         torch.from_numpy(fX_tr.reshape((-1, 1))),
+    #         covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
+    #         outcome_transform=Standardize(m=1),
+    #         input_transform=Normalize(
+    #             d=points_z_tr.shape[-1],
+    #             bounds=torch.from_numpy(z_bounds)
+    #         ),
+    #     )
+    #
+    #     mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    #     fit_gpytorch_mll(mll)
+    #     return model
+
     # CALCULATE TRUST REGION BOUNDS
     def return_tr_bounds(self):
         # 1. Determine center of trust region (current best)
@@ -122,6 +143,7 @@ class CleanLPCABO(CleanPCABO):
         fX_next = self.fX[-1]
         # TODO consider self.maximization
         #improved value
+        print(np.min(fX_next), np.min(self.fX[:-1]), np.min(self.fX[:-1]) - 1e-3 * math.fabs(np.min(self.fX[:-1])))
         if np.min(fX_next) < np.min(self.fX[:-1]) - 1e-3 * math.fabs(np.min(self.fX[:-1])):
             self.succcount += 1
             self.failcount = 0
@@ -131,11 +153,24 @@ class CleanLPCABO(CleanPCABO):
             self.failcount += 1
             print("failcount", self.failcount)
 
-        if self.succcount == self.succtol:  # Expand trust region
+        tr_length_changed = False
+
+        if self.succcount == self.succtol:   # Expand trust region
             print("expanding trust region")
             self.length = min([2.0 * self.length, self.length_max])
             self.succcount = 0
-        elif self.failcount == self.failtol:  # Shrink trust region
+            tr_length_changed = True
+        elif self.failcount == self.failtol: # Shrink trust region
             print("shrinking trust region")
             self.length /= 2.0
             self.failcount = 0
+            tr_length_changed = True
+
+        # if tr_length_changed:
+        #     doe = DOE(self.d)
+        #     [
+        #         self.eval_at(point, check_tr_bounds=False)
+        #         for point in doe.get_points(self.return_tr_bounds())
+        #         if self.budget > self.function_evaluation_count
+        #     ]
+

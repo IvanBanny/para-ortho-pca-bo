@@ -171,7 +171,7 @@ class CleanPCABO:
 
         points_z = pca.transform_to_reduced(self.X)
 
-        gpr_model = self.create_gpr_model(points_z, z_bounds)
+        gpr_model = self.create_gpr_model(points_z, calculate_reduced_space_bounds(self.bounds, pca))
 
         acquisition_function = self.create_acquisition_function(gpr_model)
 
@@ -221,7 +221,7 @@ class CleanPCABO:
         return self.bounds
 
     def create_penalized_acquisition(self, acquisition_function, gpr_model, pca):
-        if USE_CONSTRAINTS and False:
+        if USE_CONSTRAINTS:
             return acquisition_function
         return PenalizedAcqf(
             acquisition_function=acquisition_function,

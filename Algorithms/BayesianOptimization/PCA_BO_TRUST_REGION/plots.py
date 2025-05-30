@@ -54,7 +54,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
     def create_objective_plot(i):
         """Create the objective function and search points plot with zoomed-in version"""
         # Make the zoomed plot smaller by adjusting the figure size ratio
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), gridspec_kw={'width_ratios': [3, 2]})
+        fig, (ax1) = plt.subplots(1, 1, figsize=(10, 8))
 
         iteration_data = pcabo.iterations[i] if i < len(pcabo.iterations) else pcabo.iterations[-1]
 
@@ -71,7 +71,6 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
         ax1.set_ylabel("y", fontsize=12)
         ax1.set_aspect('equal', adjustable='box')
 
-        ax1.legend()
 
         # Plot objective function contour on left plot
         if pcabo.plot_Z is not None:
@@ -82,37 +81,37 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             cbar1.set_label('Objective function value', fontsize=12)
 
         # Right plot: Zoomed view (smaller)
-        ax2.set_title(f"Objective Function & Search Points (Zoomed View)\nIteration {i + 1}/{len(pcabo.iterations)}",
-                      fontsize=14)
-        ax2.set_xlabel("x", fontsize=12)
-        ax2.set_ylabel("y", fontsize=12)
-        ax2.set_aspect('equal', adjustable='box')
-
-        # Set zoomed plot limits based on current iteration bounds
-        if iteration_data.bounds is not None:
-            local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
-            local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
-
-            # Add small padding for zoomed view
-            zoom_padding_x = 0.5 * (local_x_max - local_x_min)
-            zoom_padding_y = 0.5 * (local_y_max - local_y_min)
-            ax2.set_xlim(local_x_min - zoom_padding_x, local_x_max + zoom_padding_x)
-            ax2.set_ylim(local_y_min - zoom_padding_y, local_y_max + zoom_padding_y)
-        else:
-            # Fallback to full bounds if no local bounds available
-            ax2.set_xlim(x_min - padding_x, x_max + padding_x)
-            ax2.set_ylim(y_min - padding_y, y_max + padding_y)
-
-        # Plot objective function contour on right plot (zoomed)
-        if pcabo.plot_Z is not None:
-            contour2 = ax2.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
-                                    levels=50, cmap='plasma', alpha=0.7)
-            cbar2 = plt.colorbar(contour2, ax=ax2, label='Objective function value')
-            cbar2.ax.tick_params(labelsize=12)
-            cbar2.set_label('Objective function value', fontsize=12)
+        # ax2.set_title(f"Objective Function & Search Points (Zoomed View)\nIteration {i + 1}/{len(pcabo.iterations)}",
+        #               fontsize=14)
+        # ax2.set_xlabel("x", fontsize=12)
+        # ax2.set_ylabel("y", fontsize=12)
+        # ax2.set_aspect('equal', adjustable='box')
+        #
+        # # Set zoomed plot limits based on current iteration bounds
+        # if iteration_data.bounds is not None:
+        #     local_x_min, local_x_max = iteration_data.bounds[0, 0], iteration_data.bounds[0, 1]
+        #     local_y_min, local_y_max = iteration_data.bounds[1, 0], iteration_data.bounds[1, 1]
+        #
+        #     # Add small padding for zoomed view
+        #     zoom_padding_x = 0.1 * (local_x_max - local_x_min)
+        #     zoom_padding_y = 0. * (local_y_max - local_y_min)
+        #     ax2.set_xlim(local_x_min - zoom_padding_x, local_x_max + zoom_padding_x)
+        #     ax2.set_ylim(local_y_min - zoom_padding_y, local_y_max + zoom_padding_y)
+        # else:
+        #     # Fallback to full bounds if no local bounds available
+        #     ax2.set_xlim(x_min - padding_x, x_max + padding_x)
+        #     ax2.set_ylim(y_min - padding_y, y_max + padding_y)
+        #
+        # # Plot objective function contour on right plot (zoomed)
+        # if pcabo.plot_Z is not None:
+        #     contour2 = ax2.contourf(pcabo.plot_X_grid, pcabo.plot_Y_grid, pcabo.plot_Z,
+        #                             levels=50, cmap='plasma', alpha=0.7)
+        #     cbar2 = plt.colorbar(contour2, ax=ax2, label='Objective function value')
+        #     cbar2.ax.tick_params(labelsize=12)
+        #     cbar2.set_label('Objective function value', fontsize=12)
 
         # Plot search points on both plots
-        for ax in [ax1, ax2]:
+        for ax in [ax1]:
             if iteration_data.points_x is not None:
                 points_x = iteration_data.points_x[:, 0]
                 points_y = iteration_data.points_x[:, 1]
@@ -178,11 +177,11 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             # Set tick label size
             ax.tick_params(axis='both', which='major', labelsize=12)
 
+
         # Add legend below the plots (shared)
-        if iteration_data.points_x is not None:
-            handles, labels = ax1.get_legend_handles_labels()
-            if handles:
-                fig.legend(handles, labels, bbox_to_anchor=(0.5, -0.05), loc='upper center', ncol=3, fontsize=12)
+        handles, labels = ax1.get_legend_handles_labels()
+        if handles:
+             ax1.legend(handles, labels, bbox_to_anchor=(0.5, -0.05), loc='upper center', ncol=3, fontsize=12)
 
         plt.tight_layout()
         # Adjust layout to accommodate legend below the plot
@@ -190,7 +189,10 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
         return fig
 
     def create_weighted_pca_plot(i):
-        """Create the weighted PCA transformation visualization plot"""
+        """Create the weighted PCA transformation visualization plot.
+
+        Darker colors represent lower weights and brighter colors represent higher weights.
+        """
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
 
         iteration_data = pcabo.iterations[i] if i < len(pcabo.iterations) else pcabo.iterations[-1]
@@ -229,9 +231,9 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             X = X[mask]
             weights = calculate_weights(False, iteration_data.points_y[:-1][mask])
 
-            # Plot original points in white with black edges
-            ax.scatter(X[:, 0], X[:, 1], color='white', edgecolor='black',
-                       s=80, label='Original Points', zorder=4)
+            # Plot original points with colormap based on weights
+            scatter_orig = ax.scatter(X[:, 0], X[:, 1], c='r',
+                                      edgecolor='black', s=80, label='Original Points', zorder=4)
 
             # Transform points using weights
             X_centered = X - np.mean(X, axis=0)
@@ -240,9 +242,10 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             # Shift weighted points to be around the mean for visualization
             weighted_X_shifted = weighted_X + np.mean(X, axis=0)
 
-            # Plot weighted points in blue
-            ax.scatter(weighted_X_shifted[:, 0], weighted_X_shifted[:, 1], color='blue', alpha=0.6,
-                       s=80, label='Weighted Points', zorder=5)
+            # Plot weighted points with same colormap based on weights
+            scatter_weighted = ax.scatter(weighted_X_shifted[:, 0], weighted_X_shifted[:, 1],
+                                          c=weights, cmap='viridis', alpha=0.6,
+                                          s=80, label='Weighted Points', zorder=5)
 
             # Draw lines connecting original and weighted points
             for j in range(len(X)):
@@ -250,11 +253,10 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
                         [X[j, 1], weighted_X_shifted[j, 1]],
                         'gray', alpha=0.3, linestyle='--', zorder=3)
 
-            # Add weight values as text annotations
-            for j, (x, y, w) in enumerate(zip(X[:, 0], X[:, 1], weights)):
-                ax.annotate(f'w={w:.2f}', (x, y),
-                            xytext=(5, 5), textcoords='offset points',
-                            fontsize=8, alpha=0.7)
+            # Add colorbar for weights
+            weight_cbar = plt.colorbar(scatter_orig, ax=ax, label='Weight')
+            weight_cbar.ax.tick_params(labelsize=12)
+            weight_cbar.set_label('Weight', fontsize=12)
 
             ax.legend(bbox_to_anchor=(0.5, -0.15), loc='upper center', ncol=3, fontsize=12)
 

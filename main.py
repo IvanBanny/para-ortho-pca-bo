@@ -5,10 +5,9 @@ This script configures and executes experiments comparing Vanilla BO and PCA-BO
 on benchmark functions from the BBOB suite.
 """
 
-import os
 import argparse
+import os
 import time
-import torch
 
 from Algorithms import ExperimentRunner
 
@@ -31,7 +30,7 @@ def parse_arguments():
         "--problems",
         type=int,
         nargs="+",
-        default=[15, 16, 17],
+        default=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
         help="BBOB problem IDs to test (default: 15 16 17)"
     )
 
@@ -97,19 +96,21 @@ def main():
     """Configure and run the experiment based on command line arguments."""
     args = parse_arguments()
 
+    algorithms = ["clean-pca", "clean-lpca"]
+
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
         args.dimensions = [2]  # Use only 2D
         args.problems = [21]  # Use only problems 15 and 20
         args.runs = 30  # Just 30 runs
         args.budget_factor = 5  # Small budget
-        args.doe_factor = 2.0  # Small DoE
         args.var_threshold = 0.001
+        algorithms = ["clean-lpca"]
         print("\nRunning in quick test mode with minimal settings")
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
-        algorithms=["clean-lpca"],
+        algorithms=algorithms,
         dimensions=args.dimensions,
         problem_ids=args.problems,
         num_runs=args.runs,

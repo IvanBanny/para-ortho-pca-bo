@@ -61,7 +61,7 @@ class CleanLPCABOInterface(AbstractAlgorithm):
         np.random.seed(self.random_seed)
         torch.manual_seed(self.random_seed)
 
-        clean_pcabo = CleanLPCABOWithLogging(
+        clean_pcabo = (CleanLPCABOWithLogging if self.bounds.shape[0] == 2 else CleanLPCABO)(
             problem=problem,
             budget=self.budget,
             bounds=self.bounds,
@@ -92,7 +92,7 @@ class CleanLPCABOWithLogging(CleanLPCABO):
 
     def optimize(self):
         self.iterations = []
-        # in this function y and z do not referr to the usual meanings of y and z in this class
+        # in this function y and z do not refer to the usual meanings of y and z in this class
         if self.bounds.shape[0] == 2:
             x_min = self.bounds[0, 0]
             x_max = self.bounds[0, 1]

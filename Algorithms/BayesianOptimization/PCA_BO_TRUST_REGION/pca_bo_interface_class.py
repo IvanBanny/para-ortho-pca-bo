@@ -61,7 +61,7 @@ class CleanPCABOInterface(AbstractAlgorithm):
         np.random.seed(self.random_seed)
         torch.manual_seed(self.random_seed)
 
-        clean_pcabo = CleanPCABOWithLogging(
+        clean_pcabo = (CleanPCABOWithLogging if self.bounds.shape[0] == 2 else CleanPCABO) (
             problem=problem,
             budget=self.budget,
             bounds=self.bounds,
