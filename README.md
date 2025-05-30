@@ -52,7 +52,6 @@ The code requires Python 3.10+ and the following packages:
 - botorch==0.13.0
 - gpytorch==1.14
 - ioh==0.3.18
-- iohinspector==0.0.3
 - pandas==2.2.3
 - matplotlib==3.10.1
 - seaborn==0.13.2

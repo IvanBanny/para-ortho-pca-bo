@@ -1,5 +1,6 @@
 import polars as pl
-import iohinspector
+
+import Algorithms.utils.iohreader as iohreader
 
 
 def get_loss(experiment_dir) -> pl.DataFrame:
@@ -11,7 +12,7 @@ def get_loss(experiment_dir) -> pl.DataFrame:
     Returns:
         loss (float): Loss value calculated based on ioh data in experiment_dir.
     """
-    manager = iohinspector.DataManager()
+    manager = iohreader.DataManager()
 
     try:
         manager.add_folder(experiment_dir)

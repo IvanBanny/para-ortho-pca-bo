@@ -9,10 +9,12 @@ import os
 import numpy as np
 from scipy import stats
 import polars as pl
-import iohinspector
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 import matplotlib.gridspec as gridspec
+from matplotlib.patches import Rectangle
+
+import Algorithms.utils.iohreader as iohreader
 
 
 class ExperimentVisualizer:
@@ -28,7 +30,8 @@ class ExperimentVisualizer:
             ci: float = 0.95,
             save_figures: bool = True,
             output_dir: str = "visualizations",
-            dpi: int = 300
+            dpi: int = 300,
+            cache: bool = True
     ):
         """Initialize the experiment visualizer.
 
@@ -42,6 +45,7 @@ class ExperimentVisualizer:
             save_figures: Whether to save generated figures.
             output_dir: Directory to save visualization outputs. Defaults to "./visualizations".
             dpi: DPI for raster output formats.
+            cache: Use cached results.
         """
         self.experiment_dir = experiment_dir
         self.algorithms = algorithms
@@ -52,6 +56,7 @@ class ExperimentVisualizer:
         self.save_figures = save_figures
         self.output_dir = output_dir
         self.dpi = dpi
+        self.cache = cache
 
         self.data = None
 
@@ -60,34 +65,43 @@ class ExperimentVisualizer:
 
     def plot_all(self) -> None:
         """Create all plots for the experiment data."""
-
         self.load_data()
         self.plot_convergence()
         self.plot_times()
+        self.data = None
 
     def load_data(self):
-        """Load experiment data using IOHinspector."""
+        """Load experiment data using IOHreader (because IOHinspector is shit)."""
 
-        manager = iohinspector.DataManager()
-        manager.add_folder(self.experiment_dir)
+        cache_path = os.path.join(self.experiment_dir, "cache.parquet")
+        if self.cache and os.path.exists(cache_path):
+            print("\nReading data from cache...\n")
+            self.data = pl.read_parquet(cache_path)
+        else:
+            manager = iohreader.DataManager()
+            manager.add_folder(self.experiment_dir)
 
-        cols = ['data_id', 'algorithm_name', 'batch_size', 'function_id',
-                'dimension', 'instance', 'evals', 'best_y', 'budget',
-                'random_seed', 'doe', 'evaluations', 'raw_y', 'raw_y_best']
+            cols = ['data_id', 'algorithm_name', 'batch_size', 'function_id',
+                    'dimension', 'instance', 'time', 'evals', 'best_y', 'budget',
+                    'random_seed', 'doe', 'evaluations', 'raw_y', 'raw_y_best']
 
-        self.data = pl.concat([
-            manager.select(algorithms=[algo], dimensions=[dim]).load(False, True)
-            .filter(
-                (pl.col("algorithm_name").is_in(self.algorithms) if self.algorithms is not None else pl.lit(True)) &
-                (pl.col("batch_size").is_in(self.batch_sizes) if self.batch_sizes is not None else pl.lit(True)) &
-                (pl.col("dimension").is_in(self.dimensions) if self.dimensions is not None else pl.lit(True)) &
-                (pl.col("function_id").is_in(self.functions) if self.functions is not None else pl.lit(True))
-            )
-            .select(cols)
-            .drop_nulls()
-            for algo in manager.overview["algorithm_name"].unique().to_list()
-            for dim in self.dimensions or manager.overview["dimension"].unique().to_list()
-        ])
+            self.data = pl.concat([
+                manager.select(algorithms=[algo], dimensions=[dim]).load(False, True)
+                .filter(
+                    (pl.col("algorithm_name").is_in(self.algorithms) if self.algorithms is not None else pl.lit(True)) &
+                    (pl.col("batch_size").is_in(self.batch_sizes) if self.batch_sizes is not None else pl.lit(True)) &
+                    (pl.col("dimension").is_in(self.dimensions) if self.dimensions is not None else pl.lit(True)) &
+                    (pl.col("function_id").is_in(self.functions) if self.functions is not None else pl.lit(True))
+                )
+                .select(cols)
+                .drop_nulls()
+                for algo in manager.overview["algorithm_name"].unique().to_list()
+                for dim in self.dimensions or manager.overview["dimension"].unique().to_list()
+            ])
+
+            if self.cache:
+                print("\nCaching results...\n")
+                self.data.write_parquet(cache_path)
 
     def plot_convergence(self):
         """Plot convergence graphs per batch sizes, per dimension, per function."""
@@ -215,11 +229,11 @@ class ExperimentVisualizer:
             ax.plot(x, y, c=self.colors[i], label=algorithm, linewidth=0.5)
             ax.fill_between(x, lower, upper, color=self.colors[i], alpha=0.2)
 
-        ax.set_yscale('log')
+        ax.set_yscale("log")
 
         # Calculate y-axis limits with 5% margin
         if len(stats_df) > 0:
-            bounds_df = stats_df.with_columns([
+            bounds_df = stats_df.filter(pl.col("algorithm_name").is_in(algorithms)).with_columns([
                 (pl.col("mean_y") - pl.col("margin_error")).alias("lower_bound"),
                 (pl.col("mean_y") + pl.col("margin_error")).alias("upper_bound")
             ])
@@ -295,12 +309,11 @@ class ExperimentVisualizer:
     def plot_times(self):
         """Plot execution times for each dimension, algorithm, and function."""
 
-        fig_size_margin = (1, 1)
-        fig_size_cell = (7, 8)
+        fig_size_margin = (0.2, 0.5)
+        fig_size_cell = (5, 5)
 
         batch_sizes = self.batch_sizes or self.data["batch_size"].unique()
         dimensions = self.dimensions or self.data["dimension"].unique()
-        functions = self.functions or self.data["function_id"].unique()
 
         fig_size = (fig_size_margin[0] + fig_size_cell[0] * len(dimensions),
                     fig_size_margin[1] + fig_size_cell[1])
@@ -308,7 +321,7 @@ class ExperimentVisualizer:
         # Create individual plots for different batch sizes
         for batch_size in batch_sizes:
             fig = plt.figure(figsize=fig_size, dpi=self.dpi)
-            fig.subplots_adjust(left=0.10, right=0.97, top=0.97, bottom=0.10)
+            fig.subplots_adjust(left=0.04, right=0.97, top=0.97, bottom=0.12)
 
             # Create a grid of subplots for different dimensions
             dims_gs = gridspec.GridSpec(1, len(dimensions), wspace=0.05)
@@ -330,9 +343,18 @@ class ExperimentVisualizer:
 
                 algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
 
+                from matplotlib.patches import Rectangle
+
                 legend_handles = []
                 for i, algorithm in enumerate(algorithms):
-                    handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
+                    handle = Rectangle(
+                        (0, 0), 1, 1,
+                        facecolor=self.colors[i],
+                        edgecolor="black",
+                        linewidth=0.8,
+                        alpha=0.5,
+                        label=algorithm
+                    )
                     legend_handles.append(handle)
 
                 fig.legend(handles=legend_handles, loc="lower center",
@@ -371,10 +393,97 @@ class ExperimentVisualizer:
                 else:
                     return f"{x:.1f}"
 
+        df = (
+            self.data.unique(subset=["data_id"], keep="first")
+            .select(["algorithm_name", "batch_size", "dimension", "function_id", "time"])
+            .filter((pl.col("batch_size") == batch_size) & (pl.col("dimension") == dimension))
+        )
+
+        algorithms = self.algorithms or df["algorithm_name"].unique()
+        functions = self.functions or df["function_id"].unique()
+
+        # Single group_by operation instead of nested filtering
+        grouped = (
+            df.group_by(["algorithm_name", "function_id"])
+            .agg(pl.col("time").cast(pl.Float64))
+        )
+
+        # Convert to the desired structure efficiently
+        time_data = {}
+        for algorithm in algorithms:
+            algo_data = grouped.filter(pl.col("algorithm_name") == algorithm)
+
+            # Create function_id to times mapping
+            func_times = {
+                row["function_id"]: row["time"]
+                for row in algo_data.to_dicts()
+            }
+
+            # Build matrix directly in desired orientation
+            max_len = max(len(func_times.get(f, [])) for f in functions)
+            matrix = np.full((max_len, len(functions)), np.nan)
+
+            for func_idx, func in enumerate(functions):
+                times = func_times.get(func, [])
+                matrix[:len(times), func_idx] = times
+
+            # Fill NaNs with row means
+            row_means = np.nanmean(matrix, axis=1, keepdims=True)
+            time_data[algorithm] = np.where(np.isnan(matrix), row_means, matrix)
+
+        f_margin = 0.2
+        c_margin = 0.075
+        width = (1 - f_margin) / len(algorithms)
+        positions = np.arange(len(functions))
+
+        for i, algorithm in enumerate(algorithms):
+            ax.boxplot(
+                time_data[algorithm], positions=(positions + i * width), widths=width - c_margin,
+                patch_artist=True, showfliers=True,
+                label=algorithm, boxprops=dict(facecolor=self.colors[i], alpha=0.85),
+                whiskerprops=dict(color="black", linewidth=0.5),
+                capprops=dict(color="black", linewidth=0.5),
+                medianprops=dict(color="black", linewidth=1),
+                flierprops=dict(marker="o", markersize=4, color="black", alpha=0.7)
+            )
+
+        # Set function ticks
+        ax.set_xticks(positions + (len(algorithms) - 1) * width / 2)
+        ax.set_xticklabels([f"F{fid}" for fid in functions])
+
+        # Decrease x-axis margins
+        ax.set_xlim(-(width + f_margin) / 2, len(functions) - (width + f_margin) / 2)
+
+        # Red dotted vertical separators
+        for pos in (positions[1:] - (width + f_margin) / 2):
+            ax.axvline(x=pos, color='red', linewidth=1, alpha=0.3,
+                       linestyle='--', zorder=0)
+
+        ax.set_yscale("log")
+
+        # Check how many ticks matplotlib generated
+        current_ticks = ax.get_yticks()
+        visible_ticks = [tick for tick in current_ticks if ax.get_ylim()[0] <= tick <= ax.get_ylim()[1]]
+
+        # If we don't have at least 10 visible ticks, generate our own
+        if len(visible_ticks) < 10:
+            y_min, y_max = ax.get_ylim()
+
+            # Generate 10 evenly spaced ticks in log space
+            log_min = np.log10(y_min)
+            log_max = np.log10(y_max)
+
+            # Create 10 evenly spaced points in log space
+            log_ticks = np.linspace(log_min, log_max, 10)
+            ticks = [10 ** log_tick for log_tick in log_ticks]
+
+            ax.set_yticks(ticks)
+
         ax.yaxis.set_major_formatter(FuncFormatter(integer_or_scientific_formatter))
         ax.yaxis.set_minor_formatter(FuncFormatter(lambda x, pos: ''))
-        ax.tick_params(axis="both", labelsize=6, length=2, width=0.5)
+        ax.tick_params(axis="both", labelsize=9, length=2, width=0.5)
 
         ax.set_facecolor("#f8f8f8")
         ax.grid(True, color="white", linewidth=1)
+        ax.grid(False, axis='x')
         ax.spines[["top", "right", "bottom", "left"]].set_visible(False)

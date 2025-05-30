@@ -75,6 +75,12 @@ def parse_arguments():
         help="DPI for raster output formats (default: 300)"
     )
 
+    parser.add_argument(
+        "--no_cache",
+        action="store_true",
+        help="Don't use cached results (default: False = use cache)"
+    )
+
     return parser.parse_args()
 
 
@@ -97,7 +103,8 @@ def main():
         functions=args.functions,
         save_figures=not args.no_save,
         output_dir=args.output_dir,
-        dpi=args.dpi
+        dpi=args.dpi,
+        cache=not args.no_cache
     )
 
     print("\nBayesian Optimization Visualization Configuration:")
@@ -108,7 +115,8 @@ def main():
     print(f"  Dimensions: {args.dimensions or 'all'}")
     print(f"  Functions: {args.functions or 'all'}")
     print(f"  Save figures: {not args.no_save}")
-    print(f"  DPI: {args.dpi}\n")
+    print(f"  DPI: {args.dpi}")
+    print(f"  Cache: {not args.no_cache}")
 
     # Create visualizations
     visualizer.plot_all()
