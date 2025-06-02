@@ -2,7 +2,7 @@
 #SBATCH --job-name=opcabo
 #SBATCH --output=logs/opcabo_%A_%a.out
 #SBATCH --error=logs/opcabo_%A_%a.err
-#SBATCH --mail-user="lukesuper12@gmail.com"
+#SBATCH --mail-user=""
 #SBATCH --mail-type=FAIL
 #SBATCH --partition=cpu-short
 #SBATCH --time=00:10:00

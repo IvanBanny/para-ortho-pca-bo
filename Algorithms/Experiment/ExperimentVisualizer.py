@@ -60,8 +60,7 @@ class ExperimentVisualizer:
 
         self.data = None
 
-        self.colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-                       '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
+        self.colors = ['#FF6B6B', '#4ECDC4', '#FFB347', '#98FB98', '#DDA0DD', '#FFA07A']
 
     def plot_all(self) -> None:
         """Create all plots for the experiment data."""
@@ -69,6 +68,15 @@ class ExperimentVisualizer:
         self.plot_convergence()
         self.plot_times()
         self.data = None
+
+    def get_algo_list(self, df):
+        algorithms = self.algorithms or df["algorithm_name"].unique().to_list()
+
+        # Sort with priority: opca first, then pca, then alphabetical
+        return sorted(algorithms, key=lambda x: (
+            0 if "opca" in x.lower() else 1 if "pca" in x.lower() else 2,
+            x
+        ))
 
     def load_data(self):
         """Load experiment data using IOHreader (because IOHinspector is shit)."""
@@ -159,9 +167,9 @@ class ExperimentVisualizer:
                          rotation=90, verticalalignment="center", fontsize=13, fontweight="normal")
 
             # Add horizontal text label at the bottom
-            fig.text(0.5, 0.03, "iteration", horizontalalignment="center", fontsize=13, fontweight="normal")
+            fig.text(0.5, 0.03, "evaluations", horizontalalignment="center", fontsize=13, fontweight="normal")
 
-            algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
+            algorithms = self.get_algo_list(self.data)
 
             legend_handles = []
             for i, algorithm in enumerate(algorithms):
@@ -214,7 +222,7 @@ class ExperimentVisualizer:
             .sort(["algorithm_name", "evaluations"])
         )
 
-        algorithms = self.algorithms or stats_df["algorithm_name"].unique().sort().to_list()
+        algorithms = self.get_algo_list(stats_df)
 
         for i, algorithm in enumerate(algorithms):
             algo_data = stats_df.filter(pl.col("algorithm_name") == algorithm)
@@ -341,7 +349,7 @@ class ExperimentVisualizer:
 
                 self._plot_individual_times(batch_size, dimension, ax)
 
-                algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
+                algorithms = self.get_algo_list(self.data)
 
                 from matplotlib.patches import Rectangle
 
@@ -399,7 +407,7 @@ class ExperimentVisualizer:
             .filter((pl.col("batch_size") == batch_size) & (pl.col("dimension") == dimension))
         )
 
-        algorithms = self.algorithms or df["algorithm_name"].unique()
+        algorithms = self.get_algo_list(df)
         functions = self.functions or df["function_id"].unique()
 
         # Single group_by operation instead of nested filtering

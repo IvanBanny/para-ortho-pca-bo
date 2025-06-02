@@ -1,149 +1,212 @@
-# PCA-Assisted Bayesian Optimization
+# Orthogonal PCA-BO: Enhanced Bayesian Optimization for High-Dimensional Problems
 
-This repository implements PCA-assisted Bayesian Optimization (PCA-BO), a method for scaling up Bayesian Optimization to higher-dimensional problems by incorporating dimensionality reduction via Principal Component Analysis.
+A Python implementation of Orthogonal Principal Component Analysis-assisted Bayesian Optimization (O-PCA-BO), addressing fundamental exploration limitations in PCA-BO through systematic parallel orthogonal sampling.
 
 ## Overview
 
-Bayesian Optimization (BO) is limited in high-dimensional applications due to its:
-1. Increasing computational complexity with dimension
-2. Reduced convergence rate in higher dimensions
-3. Difficulties in exploration-exploitation balance in large search spaces
+This repository implements the O-PCA-BO algorithm presented in "Enhancing PCA-Assisted Bayesian Optimization through Parallel Orthogonal Sampling" (Banny, 2025). The method addresses a critical limitation of PCA-BO: exploration restricted exclusively to the subspace spanned by selected principal components, potentially missing global optima in orthogonal directions.
 
-PCA-BO addresses these limitations by:
-1. Learning a linear transformation from evaluated points
-2. Selecting dimensions in the transformed space based on data variability
-3. Building surrogate models in a reduced space
-4. Mapping points back to the original space for function evaluations
+### The Problem with PCA-BO
 
-This approach enables BO to handle higher-dimensional problems better while and faster.
-## Repository Structure
+PCA-assisted Bayesian Optimization reduces computational complexity by operating in a lower-dimensional subspace. However, it exhibits a self-reinforcing limitation: as more points are sampled within the reduced subspace, variance along those dimensions increases, making them more likely to be retained in subsequent iterations. This feedback mechanism can permanently exclude optimal regions in the orthogonal complement space.
 
-```
-para-ortho-pca-bo/
-|--- Algorithms/
-|   |--- BayesianOptimization/
-|   |   |--- AbstractBayesianOptimizer.py  # Base class for BO algorithms
-|   |   |--- O_PCA_BO.py                     # PCA-assisted BO implementation
-|   |   |--- Vanilla_BO.py                 # Standard BO implementation
-|   |--- Experiment/
-|   |   |--- ExperimentRunner.py           # Experiment framework
-|   |   |--- Visualization.py              # Visualization tools
-|   |--- utils/
-|   |   |--- utilities.py                  # Utility functions
-|   |   |--- tqdm_write_stream.py          # tqdm.write stream utility
-|   |--- AbstractAlgorithm.py              # Abstract optimization class
-|   |--- __init__.py                       # Package initialization
-|--- main.py                               # Command-line script for experiments
-|--- plot_results.py                       # Command-line script for visualization
-|--- requirements.txt                      # Package dependencies
-|--- LICENSE                               # MIT License
-|--- README.md                             # This file
-```
+### Our Solution: Orthogonal Sampling
+
+O-PCA-BO introduces **parallel orthogonal sampling** where for each candidate selected in the principal component subspace, multiple points are sampled in the $(d-r)$-dimensional orthogonal complement space using Hit-and-Run MCMC sampling. This maintains computational efficiency while enabling exploration of previously inaccessible regions.
+
+## Key Features
+
+### Core Algorithm
+- **Systematic orthogonal exploration** in the $(d-r)$-dimensional complement space
+- **Adaptive basis rotation** through orthogonal sample feedback
+- **Parallel evaluation framework** for computational efficiency
+- **Constraint-aware sampling** using polytope Hit-and-Run MCMC
+
+### Algorithmic Enhancements
+- **Squared rank-based weighting** to reduce influence of poor-performing points
+- **Log Expected Improvement with penalization** for stable bound constraint handling
+- **Selective GPR training** using composite value-distance ranking
+- **Distance-controlled orthogonal sampling** with adaptive intensity
+
+### Implementation
+- **GPU acceleration** via PyTorch and BOTorch
+- **Robust numerical handling** with comprehensive error recovery
+- **Real-time visualization** for 2D optimization landscapes
+- **Comprehensive benchmarking** on COCO BBOB functions F15-F24
 
 ## Installation
 
-### Requirements
-
-The code requires Python 3.10+ and the following packages:
-- numpy==1.26.4
-- torch==2.6.0
-- pyDOE==0.3.8
-- scikit-learn==1.6.1
-- botorch==0.13.0
-- gpytorch==1.14
-- ioh==0.3.18
-- pandas==2.2.3
-- matplotlib==3.10.1
-- seaborn==0.13.2
-- polars==1.27.0
-- tqdm==4.67.1
-
-
-Install dependencies:
-
 ```bash
+git clone https://github.com/IvanBanny/para-ortho-pca-bo.git
+cd para-ortho-pca-bo
 pip install -r requirements.txt
 ```
 
-## Usage
+### Dependencies
+- **Core**: `torch`, `botorch`, `gpytorch`, `numpy`
+- **Optimization**: `ioh` (IOHexperimenter), `pyDOE`
+- **Sampling**: Hit-and-Run MCMC implementation
+- **Visualization**: `matplotlib`, `polars`, `pandas`
 
-### Running Experiments
+## Quick Start
 
-Run experiments comparing Vanilla BO and PCA-BO:
+### Basic Usage
+
+```python
+from ioh import get_problem
+from Algorithms import O_PCA_BO
+
+# Configure O-PCA-BO with optimized hyperparameters
+optimizer = O_PCA_BO(
+    budget=200,
+    n_DoE=40,                   # 4d initial points
+    q=1,                        # Candidates per iteration in reduced space
+    ortho_samples=5,            # Orthogonal samples per candidate
+    var_threshold=0.95,         # PCA variance threshold
+    gpr_p=0.589,               # Fraction of points for GP training
+    gpr_val_factor=0.101,      # Value vs distance ranking weight
+    onorm_factor=3.027,        # Orthogonal sampling intensity
+    acquisition_function="expected_improvement"
+)
+
+# Test on BBOB function with weak global structure
+problem = get_problem(function_id=20, dimension=40, instance=0)
+optimizer(problem)
+```
+
+### Reproducing Thesis Results
 
 ```bash
-python main.py
+# Full experimental comparison on F15-F24
+python main.py \
+    --algorithms vanilla pca opca \
+    --batch 1 5 \
+    --dimensions 10 20 40 \
+    --problems 15 16 17 18 19 20 21 22 23 24 \
+    --runs 30
+
+# Generate performance visualizations
+python plots.py --experiment_dir experiment
 ```
 
-Command-line options:
+## Algorithm Details
+
+### Mathematical Foundation
+
+O-PCA-BO decomposes any point in the original space as:
 ```
---dimensions      : Problem dimensions to test [default: 10 20 40]
---functions       : BBOB function IDs to test [default: 15 16 17]
---runs            : Number of independent runs [default: 30]
---budget_factor   : Budget factor (budget = budget_factor * dim + 50) [default: 10]
---doe_factor      : Initial design size factor (n_doe = doe_factor * dim) [default: 3.0]
---experiment_dir  : Output directory [default: pca-bo-experiment]
---acquisition     : Acquisition function [default: expected_improvement]
---var_threshold   : PCA variance threshold [default: 0.95]
---verbose         : Enable detailed output
+x = P_r * z_r + P_{d-r} * z_{d-r} + μ' + μ
+```
+where:
+- `P_r`: First r principal components (reduced space)
+- `P_{d-r}`: Remaining (d-r) components (orthogonal space)
+- `z_r`: Coordinates in reduced space (optimized by acquisition function)
+- `z_{d-r}`: Coordinates in orthogonal space (sampled via MCMC)
+
+### Orthogonal Sampling Strategy
+
+For each candidate point `x'` selected in the reduced space:
+```
+x'_ortho,j = x' + P_{d-r} * δ_j,  j = 1,...,m
 ```
 
-Example:
+The displacement vectors `δ_j` are generated using Hit-and-Run MCMC with adaptive distance control:
+
+1. **Over-sampling**: Generate `m × s` samples where `s = max(1, ⌊onorm_factor × √(d-r)⌋)`
+2. **Distance selection**: Choose `m` samples closest to origin in orthogonal space
+
+### Key Hyperparameters
+
+Based on Bayesian optimization over 8,640 configurations:
+
+- **`gpr_p = 0.589`**: Proportion of points for GP training (avoids model confusion from overlapping projections)
+- **`gpr_val_factor = 0.101`**: Weight for value ranking vs distance ranking in point selection
+- **`onorm_factor = 3.027`**: Controls orthogonal sampling intensity (0 = uniform, >0 = closer to candidates)
+
+## Experimental Results
+
+### Performance on BBOB Functions
+
+Testing on functions F15-F24 across dimensions 10, 20, 40:
+
+**Functions with Adequate Global Structure (F15-F19)**:
+- O-PCA-BO performs comparably to PCA-BO
+- Faster initial convergence due to broader exploration
+
+**Functions with Weak Global Structure (F20-F24)**:
+- O-PCA-BO demonstrates dramatic superiority
+- PCA-BO often plateaus while O-PCA-BO maintains consistent improvement
+- Performance advantage increases with dimension
+
+### Statistical Significance
+
+Wilcoxon rank-sum tests across 30 independent runs confirm significant improvements, particularly on functions F20-F24 where O-PCA-BO often finds solutions orders of magnitude better than PCA-BO.
+
+## Project Structure
+
+```
+para-ortho-pca-bo/
+├── Algorithms/
+│   ├── BayesianOptimization/
+│   │   ├── O_PCA_BO.py              # Main O-PCA-BO implementation
+│   │   ├── Vanilla_BO.py            # Standard BO baseline
+│   │   ├── PenalizedAcqf.py         # Constraint-aware acquisition
+│   │   └── AbstractBayesianOptimizer.py
+│   ├── Experiment/                  # Benchmarking framework
+│   └── utils/
+│       ├── taylor.py                # Variance estimation for PCA mappings
+│       ├── vis_utils.py             # Real-time 2D visualization
+│       └── iohreader/               # BBOB data processing
+├── meta-bo/                         # Hyperparameter optimization
+├── main.py                          # Experiment runner
+├── plots.py                         # Results visualization
+└── example.py                       # Simple usage demo
+```
+
+## Implementation Highlights
+
+### Robust Numerical Handling
+- **Multiple fallback strategies** for GP fitting failures
+- **Adaptive restart mechanisms** for acquisition optimization
+- **Constraint-aware sampling** ensuring feasibility
+
+### Advanced Features
+- **Taylor series approximation** for uncertainty estimation in PCA mappings
+- **Real-time 2D visualization** with acquisition function overlays
+- **Parallel evaluation** with efficient GPU utilization
+- **Comprehensive logging** for reproducibility
+
+### Hyperparameter Optimization
+The `meta-bo/` directory contains a complete Bayesian optimization system for tuning O-PCA-BO hyperparameters:
+
 ```bash
-python main.py --dimensions 5 10 20 --functions 15 21 --runs 10 --verbose
+cd meta-bo
+python meta-bo.py                # Run hyperparameter optimization
+python meta-bo-slurms.py         # Generate cluster job scripts
+python meta-bo-vis.py            # Visualize parameter landscape
 ```
 
-### Visualizing Results
+## Citation
 
-Analyze and visualize experiment results:
+If you use this implementation, please cite:
 
-```bash
-python plots.py
+```
+@mastersthesis{banny2025opcabo,
+    title={Enhancing PCA-Assisted Bayesian Optimization through Parallel Orthogonal Sampling},
+    author={Ivan Banny},
+    school={Leiden University},
+    year={2025},
+    type={Bachelor's thesis}
+}
 ```
 
-Command-line options:
-```
---experiment_dir  : Directory containing experiment data [default: pca-bo-experiment]
---output_dir      : Directory for visualization outputs [default: experiment_dir/visualizations]
---dimensions      : Dimensions to analyze [default: all]
---functions       : Function IDs to analyze [default: all]
---no_save         : Don't save visualization files (display only)
---format          : Output file format (png, pdf, svg) [default: png]
---dpi             : DPI for raster outputs [default: 300]
-```
+## Computational Requirements
 
-Example:
-```bash
-python plots.py --experiment_dir pca-bo-experiment --functions 15 16 --format pdf
-```
-
-## Key Components
-
-### PCA-BO Algorithm
-
-The PCA-BO algorithm works through the following steps:
-
-1. Initial sampling using Latin Hypercube Sampling (LHS)
-2. Ranking-based weighting scheme for evaluated points
-3. Weighted PCA to identify important dimensions
-4. Dimensionality reduction maintaining specified variance
-5. GPR modeling in reduced space
-6. Acquisition function optimization in reduced space
-7. Inverse mapping to original space for new evaluations
-8. Model updating with new data
-
-### Benchmark Problems
-
-The implementation uses the BBOB benchmark suite via the IOH framework, with a focus on:
-- Multi-modal functions with adequate global structure (F15-F19)
-- Multi-modal functions with weak global structure (F20-F24)
-
-The experimental setup follows methodologies from recent research in high-dimensional Bayesian Optimization.
-
-## Development
-
-This repository is part of ongoing research on high-dimensional Bayesian Optimization techniques. The codebase is designed to support additional algorithmic variants, benchmark functions, and analytical tools.
+Experiments performed using ALICE compute resources (Leiden University):
+- **Hardware**: AMD EPYC 9534 (AMD.Zen4) processors
+- **Memory**: Scales with dimension (1.5GB sufficient for d=40)
+- **GPU**: Optional CUDA acceleration for GP operations
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License - see `LICENSE` file for details.

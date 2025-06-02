@@ -110,7 +110,7 @@ def main():
     print("\nBayesian Optimization Visualization Configuration:")
     print(f"  Experiment directory: {args.experiment_dir}")
     print(f"  Output directory: {visualizer.output_dir}")
-    print(f"  Batch sizes: {args.algorithms or 'all'}")
+    print(f"  Algorithms: {args.algorithms or 'all'}")
     print(f"  Batch sizes: {args.batches or 'all'}")
     print(f"  Dimensions: {args.dimensions or 'all'}")
     print(f"  Functions: {args.functions or 'all'}")
