@@ -100,11 +100,11 @@ def main():
 
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
-        args.dimensions = [2]  # Use only 2D
-        args.problems = [21]  # Use only problems 15 and 20
+        args.dimensions = [40]  # Use only 2D
+        args.problems = [23]  # Use only problems 15 and 20
         args.runs = 30  # Just 30 runs
         args.budget_factor = 5  # Small budget
-        args.var_threshold = 0.001
+        # args.var_threshold = 0.001
         algorithms = ["clean-lpca"]
         print("\nRunning in quick test mode with minimal settings")
 

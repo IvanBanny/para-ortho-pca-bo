@@ -21,7 +21,8 @@ from sklearn.decomposition import PCA
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import LHS_sampler
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
-USE_CONSTRAINTS = True
+USE_CONSTRAINTS = False
+
 
 class DOE:
     def __init__(
@@ -68,13 +69,13 @@ class PCBANumComponents:
     ):
         self.num_components = num_components
         self.var_threshold = var_threshold
-        
+
         assert num_components is None or var_threshold is None, "Cannot specify both num_components and var_threshold"
-        
+
     def __call__(self, pca: PCA) -> int:
         if self.num_components is not None:
             return self.num_components
-        
+
         if self.var_threshold is not None:
             cumsum = np.cumsum(pca.explained_variance_ratio_)
             n_components = np.argmax(cumsum >= self.var_threshold) + 1
@@ -120,11 +121,7 @@ class MyPCA:
         return self.data_mean + self.pca.inverse_transform(points_z)
 
 
-
-    
-
 class CleanPCABO:
-
     function_evaluation_count = 0
 
     def __init__(
@@ -145,7 +142,6 @@ class CleanPCABO:
         self.pca_num_components = pca_num_components
         self.doe = doe
 
-
         print(f"acquisition_function_class: {acquisition_function_class}")
 
         self.X = np.zeros((0, self.d))
@@ -154,7 +150,6 @@ class CleanPCABO:
         self.optimize()
 
         assert self.function_evaluation_count <= self.budget
-
 
     def optimize(self):
         # Get and evaluate initial DoE points
@@ -216,7 +211,6 @@ class CleanPCABO:
             maximize=self.maximization
         )
 
-
     def return_tr_bounds(self):
         return self.bounds
 
@@ -232,7 +226,7 @@ class CleanPCABO:
             transform_to_reduced=lambda points_x_tensor: torch.from_numpy(
                 pca.transform_to_reduced(points_x_tensor.detach().numpy())
             ),
-            penalty_factor=-10
+            penalty_factor=100
         )
 
     def optimize_acquisition(self, pca: MyPCA, penalized_acquisition_function, z_bounds):
@@ -302,11 +296,10 @@ class CleanPCABO:
                     -torch.from_numpy(components[: n_components, i]),
                     float(-ubm[i])
                 ))
-    
+
             # If the acquisition function contains a model, move it to the device
             if hasattr(penalized_acquisition_function, 'model') and hasattr(penalized_acquisition_function.model, 'to'):
                 penalized_acquisition_function.model = penalized_acquisition_function.model
-
 
         raw_samples = 5  # TODO make configurable
         # Optimize the acquisition function
@@ -316,7 +309,7 @@ class CleanPCABO:
             q=1,
             num_restarts=5,
             raw_samples=raw_samples,
-            #options={"batch_limit": 50, "maxiter": 500, "device": device},
+            # options={"batch_limit": 50, "maxiter": 500, "device": device},
             return_best_only=True,
             inequality_constraints=inequality_constraints,  # Properly formatted inequality constraints
         )
@@ -324,20 +317,33 @@ class CleanPCABO:
         # Transfer results back to CPU and convert to numpy
         return candidates.cpu().detach().numpy().reshape(-1)
 
-
-
     def eval_at(self, point_x: np.ndarray, check_tr_bounds: bool = True):
         # if outside of problem bounds or outside of trust region bounds
-        if is_outside_bounds(point_x, self.bounds, 1e-5) or (check_tr_bounds and is_outside_bounds(point_x, self.return_tr_bounds(), 1e-5)):
-            raise "The Algorithm tried to sample a point outside the bounds, perhaps the penalization or the linear constraints of the optimization function are wrong!"
+        # if is_outside_bounds(point_x, self.bounds, 1e-5) or (check_tr_bounds and is_outside_bounds(point_x, self.return_tr_bounds(), 1e-5)):
+        #     raise "The Algorithm tried to sample a point outside the bounds, perhaps the penalization or the linear constraints of the optimization function are wrong!"
+        # First clip to problem bounds
+        clipped_point = np.clip(point_x, self.bounds[:, 0], self.bounds[:, 1])
 
-        value = self.problem(point_x)
+        # If check_tr_bounds is True, also clip to trust region bounds
+        if check_tr_bounds:
+            tr_bounds = self.return_tr_bounds()
+            clipped_point = np.clip(clipped_point, tr_bounds[:, 0], tr_bounds[:, 1])
 
-        self.X = np.vstack((self.X, point_x))
+        # Evaluate the objective function at the clipped point
+        value = self.problem(clipped_point)
+
+        # Store the clipped point and its value
+        self.X = np.vstack((self.X, clipped_point))
         self.fX = np.append(self.fX, [value])
 
         self.function_evaluation_count += 1
 
+        # Optionally, you could return information about whether clipping occurred
+        clipping_occurred = not np.allclose(point_x, clipped_point)
+        if clipping_occurred:
+            print(f"Warning: Point {point_x} was clipped to {clipped_point} to satisfy bounds")
+
+        return value
 
     @property
     def d(self) -> int:
@@ -345,7 +351,7 @@ class CleanPCABO:
 
     @property
     def current_best(self) -> float:
-        return self.fX.max()  if self.maximization else self.fX.min()
+        return self.fX.max() if self.maximization else self.fX.min()
 
 
 def calculate_weights(maximization: bool, points_y: np.ndarray) -> np.ndarray:
@@ -447,4 +453,3 @@ class AcquisitionFunctionEnum(Enum):
             if acq_func.value[2] == name:
                 return acq_func
         raise ValueError(f"Invalid acquisition function name: {name}")
-
