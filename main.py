@@ -96,7 +96,7 @@ def main():
     """Configure and run the experiment based on command line arguments."""
     args = parse_arguments()
 
-    algorithms = ["clean-pca", "clean-lpca"]
+    algorithms = ["clean-lpca"]
 
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:

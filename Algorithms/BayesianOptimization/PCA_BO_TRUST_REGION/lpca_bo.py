@@ -143,7 +143,6 @@ class CleanLPCABO(CleanPCABO):
         fX_next = self.fX[-1]
         # TODO consider self.maximization
         #improved value
-        print(np.min(fX_next), np.min(self.fX[:-1]), np.min(self.fX[:-1]) - 1e-3 * math.fabs(np.min(self.fX[:-1])))
         if np.min(fX_next) < np.min(self.fX[:-1]) - 1e-3 * math.fabs(np.min(self.fX[:-1])):
             self.succcount += 1
             self.failcount = 0
@@ -166,11 +165,11 @@ class CleanLPCABO(CleanPCABO):
             self.failcount = 0
             tr_length_changed = True
 
-        # if tr_length_changed:
-        #     doe = DOE(self.d)
-        #     [
-        #         self.eval_at(point, check_tr_bounds=False)
-        #         for point in doe.get_points(self.return_tr_bounds())
-        #         if self.budget > self.function_evaluation_count
-        #     ]
+        if tr_length_changed:
+            doe = DOE(self.d)
+            [
+                self.eval_at(point, check_tr_bounds=False)
+                for point in doe.get_points(self.return_tr_bounds())
+                if self.budget > self.function_evaluation_count
+            ]
 

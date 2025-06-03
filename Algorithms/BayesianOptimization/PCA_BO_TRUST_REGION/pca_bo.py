@@ -239,48 +239,69 @@ class CleanPCABO:
         inequality_constraints = None
         if USE_CONSTRAINTS:
             # Get PCA components and means for transformation
-            components = torch.from_numpy(pca.pca.components_)  # shape: [n_components, n_features]
-            data_mean = torch.from_numpy(pca.data_mean)  # shape: [n_features]
-            pca_mean = torch.from_numpy(
-                pca.pca.mean_ if hasattr(pca.pca, 'mean_') else np.zeros_like(pca.data_mean)) # shape: [n_features]
-    
-            # Get original bounds as tensors
-            lower_bounds = torch.from_numpy(self.return_tr_bounds()[:, 0])  # shape: [n_features]
-            upper_bounds = torch.from_numpy(self.return_tr_bounds()[:, 1])  # shape: [n_features]
-    
-            # The transformation from reduced to original space is:
-            # x_orig = data_mean + components.T @ z + pca_mean
-            # So we need to ensure:
-            # lower_bounds <= data_mean + components.T @ z + pca_mean <= upper_bounds
-    
-            # Calculate the offset (data_mean + pca_mean)
-            total_offset = data_mean + pca_mean
-    
-            # Format inequality constraints according to botorch requirements
-            # We need to create constraints in the form:
-            # sum_i (X[indices[i]] * coefficients[i]) >= rhs
-    
-            inequality_constraints = []
+            # components = torch.from_numpy(pca.pca.components_)  # shape: [n_components, n_features]
+            # data_mean = torch.from_numpy(pca.data_mean)  # shape: [n_features]
+            # pca_mean = torch.from_numpy(
+            #     pca.pca.mean_ if hasattr(pca.pca, 'mean_') else np.zeros_like(pca.data_mean)) # shape: [n_features]
+            #
+            # # Get original bounds as tensors
+            # lower_bounds = torch.from_numpy(self.return_tr_bounds()[:, 1])  # shape: [n_features]
+            # upper_bounds = torch.from_numpy(self.return_tr_bounds()[:, 0])  # shape: [n_features]
+            #
+            # print("upper_bounds:", lower_bounds)
+            # print("lower_bounds:", upper_bounds)
+            #
+            # # The transformation from reduced to original space is:
+            # # x_orig = data_mean + components.T @ z + pca_mean
+            # # So we need to ensure:
+            # # lower_bounds <= data_mean + components.T @ z + pca_mean <= upper_bounds
+            #
+            # # Calculate the offset (data_mean + pca_mean)
+            # total_offset = data_mean + pca_mean
+            #
+            # # Format inequality constraints according to botorch requirements
+            # # We need to create constraints in the form:
+            # # sum_i (X[indices[i]] * coefficients[i]) >= rhs
+            #
+            # inequality_constraints = []
+            # n_components = components.shape[0]  # Number of PCA components
+            #
+            # # For each dimension in the original space
+            # for dim in range(self.d):
+            #     # Upper bound constraint: components[dim] @ z <= upper_bounds[dim] - total_offset[dim]
+            #     # Convert to: -components[dim] @ z >= -(upper_bounds[dim] - total_offset[dim])
+            #     upper_indices = torch.arange(n_components, dtype=torch.long)
+            #     upper_coefficients = -components[:, dim].cpu()  # Transfer to CPU for constraint definition
+            #     upper_rhs = -(upper_bounds[dim] - total_offset[dim]).cpu()
+            #     inequality_constraints.append((upper_indices, -upper_coefficients, -upper_rhs))
+            #
+            #     # Lower bound constraint: components[dim] @ z >= lower_bounds[dim] - total_offset[dim]
+            #     lower_indices = torch.arange(n_components, dtype=torch.long)
+            #     lower_coefficients = components[:, dim].cpu()  # Transfer to CPU for constraint definition
+            #     lower_rhs = (lower_bounds[dim] - total_offset[dim]).cpu()
+            #     inequality_constraints.append((lower_indices, -lower_coefficients, -lower_rhs))
+
+            pca_mean = pca.pca.mean_
+            data_mean = pca.data_mean
+            components = pca.pca.components_
+
+            original_bounds = self.return_tr_bounds()
+            # Calculate all the 2*d inequality constraints List[Tuple[Tensor, Tensor, float]]
             n_components = components.shape[0]  # Number of PCA components
-    
-            # For each dimension in the original space
-            for dim in range(self.d):
-                # Upper bound constraint: components[dim] @ z <= upper_bounds[dim] - total_offset[dim]
-                # Convert to: -components[dim] @ z >= -(upper_bounds[dim] - total_offset[dim])
-                upper_indices = torch.arange(n_components, dtype=torch.long)
-                upper_coefficients = -components[:, dim].cpu()  # Transfer to CPU for constraint definition
-                upper_rhs = -(upper_bounds[dim] - total_offset[dim]).cpu()
-                inequality_constraints.append((upper_indices, upper_coefficients, upper_rhs))
-    
-                # Lower bound constraint: components[dim] @ z >= lower_bounds[dim] - total_offset[dim]
-                lower_indices = torch.arange(n_components, dtype=torch.long)
-                lower_coefficients = components[:, dim].cpu()  # Transfer to CPU for constraint definition
-                lower_rhs = (lower_bounds[dim] - total_offset[dim]).cpu()
-                inequality_constraints.append((lower_indices, lower_coefficients, lower_rhs))
-    
-            # Move acquisition function to the selected device
-            if hasattr(penalized_acquisition_function, 'to'):
-                penalized_acquisition_function = penalized_acquisition_function
+            inequality_constraints = []
+            lbm = original_bounds[:, 0] - pca_mean - data_mean
+            ubm = original_bounds[:, 1] - pca_mean - data_mean
+            for i in range(self.d):
+                inequality_constraints.append((
+                    torch.arange(n_components),
+                    torch.from_numpy(components[: n_components, i]),
+                    float(lbm[i])
+                ))
+                inequality_constraints.append((
+                    torch.arange(n_components),
+                    -torch.from_numpy(components[: n_components, i]),
+                    float(-ubm[i])
+                ))
     
             # If the acquisition function contains a model, move it to the device
             if hasattr(penalized_acquisition_function, 'model') and hasattr(penalized_acquisition_function.model, 'to'):
@@ -293,7 +314,7 @@ class CleanPCABO:
             acq_function=penalized_acquisition_function,
             bounds=torch.from_numpy(z_bounds),
             q=1,
-            num_restarts=2,
+            num_restarts=5,
             raw_samples=raw_samples,
             #options={"batch_limit": 50, "maxiter": 500, "device": device},
             return_best_only=True,
