@@ -1,8 +1,9 @@
-from ..AbstractAlgorithm import AbstractAlgorithm
 from typing import Union, Optional
 from pyDOE import lhs
 import numpy as np
 from abc import abstractmethod
+
+from ..AbstractAlgorithm import AbstractAlgorithm
 
 
 # noinspection PyPep8Naming

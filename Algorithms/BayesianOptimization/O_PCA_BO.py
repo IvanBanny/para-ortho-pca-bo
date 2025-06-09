@@ -1,4 +1,4 @@
-"""A standard PCA-BO implementation."""
+"""A standard O-PCA-BO implementation."""
 
 import os
 from math import ceil
@@ -34,7 +34,7 @@ from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_
 from Algorithms.utils.taylor import estimate_f00_variance
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
-from Algorithms.utils.vis_utils import PCABOVisualizer
+from Algorithms.utils.vis_utils import OPCABOVisualizer
 
 import warnings
 from botorch.exceptions import ModelFittingError
@@ -175,7 +175,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
         # Initialize visualizer if requested
         self.visualize = visualize
-        self.visualizer = PCABOVisualizer(output_dir=vis_output_dir) if self.visualize else None
+        self.visualizer = OPCABOVisualizer(output_dir=vis_output_dir) if self.visualize else None
 
         self.save_logs = save_logs
         self.log_dir = log_dir

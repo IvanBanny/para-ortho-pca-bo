@@ -2,7 +2,7 @@
 """
 Entry point script for visualizing Bayesian Optimization experiment results.
 This script loads, analyzes, and visualizes the results of experiments comparing
-Vanilla BO and PCA-BO algorithms.
+Vanilla BO, PCA-BO, and O-PCA-BO algorithms.
 """
 
 import os

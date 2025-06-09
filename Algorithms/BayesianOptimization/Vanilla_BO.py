@@ -27,7 +27,7 @@ from ioh.iohcpp.problem import RealSingleObjective
 
 from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
-from Algorithms.utils.vis_utils import PCABOVisualizer
+from Algorithms.utils.vis_utils import OPCABOVisualizer
 
 import warnings
 from botorch.exceptions.warnings import OptimizationWarning, BadInitialCandidatesWarning
@@ -113,7 +113,7 @@ class Vanilla_BO(AbstractBayesianOptimizer):
 
         # Initialize visualizer if requested
         self.visualize = visualize
-        self.visualizer = PCABOVisualizer(output_dir=vis_output_dir) if self.visualize else None
+        self.visualizer = OPCABOVisualizer(output_dir=vis_output_dir) if self.visualize else None
 
     def __str__(self):
         return "This is an instance of a Vanilla BO Optimizer"

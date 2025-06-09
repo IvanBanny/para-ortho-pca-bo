@@ -9,10 +9,10 @@ import io
 import torch
 
 
-class PCABOVisualizer:
-    """Visualizer class for PCA-BO to create animations of the acquisition function.
+class OPCABOVisualizer:
+    """Visualizer class for Vanilla BO, PCA-BO, and O-PCA-BO.
 
-    This class generates 2d visualizations of the PCA-BO sampling.
+    This class generates 2d gifs through sampling iterations.
     Primarily designed for a 2d problem with 1pc case.
     """
 
