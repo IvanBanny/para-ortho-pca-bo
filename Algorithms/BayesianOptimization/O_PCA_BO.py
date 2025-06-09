@@ -19,9 +19,9 @@ from botorch.fit import fit_gpytorch_mll
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition import (
     AcquisitionFunction,
-    LogExpectedImprovement,
+    ExpectedImprovement,
     ProbabilityOfImprovement,
-    qLogExpectedImprovement,
+    qExpectedImprovement,
     qProbabilityOfImprovement
 )
 from botorch.acquisition.objective import GenericMCObjective
@@ -80,6 +80,8 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             gpr_p: float = 0.589013,
             gpr_val_factor: float = 0.100655,
             onorm_factor: float = 3.027467,
+            use_cont_log: bool = True,
+            p_factor: float = 1e-3,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -107,6 +109,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.100655.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 3.027467.
+            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-3.
+            use_cont_log (bool, optional): Whether to use the new penalization method with
+                                           continuous log acqf penalization. Defaults to True.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
             torch_config (Dict[str, Any], optional): gpu configuration.
@@ -128,6 +133,8 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         self.gpr_val_factor = gpr_val_factor
         self.onorm_factor = onorm_factor
         self.ortho_samples = ortho_samples
+        self.use_cont_log = use_cont_log
+        self.p_factor = p_factor
 
         # Set PCA parameters
         self.n_components = n_components
@@ -579,7 +586,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
         # Calculate z bounds
-        r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
+        r = torch.norm(torch.abs(original_bounds[:, 1] - original_bounds[:, 0])) / 2
         z_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
                     .expand(-1, self.reduced_space_dim))
 
@@ -602,9 +609,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             acquisition_function=self.acquisition_function,
             model=self.__model_obj,
             original_bounds=original_bounds,
-            pca_d2r_fn=self._transform_points_to_reduced_space,
             pca_r2d_fn=self._transform_points_to_original_space,
-            penalty_factor=100.0
+            use_cont_log=self.use_cont_log,
+            p_factor=self.p_factor,
         )
 
         # # Calculate all the 2*d inequality constraints List[Tuple[Tensor, Tensor, float]]
@@ -703,7 +710,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         original_bounds = torch.tensor(self.bounds, device=self.device, dtype=self.dtype)
 
         # Calculate ortho bounds
-        r = torch.min(torch.abs(original_bounds[:, 0] - original_bounds[:, 1]) / 2)
+        r = torch.norm(torch.abs(original_bounds[:, 1] - original_bounds[:, 0])) / 2
         ortho_bounds = (torch.tensor([[-r], [r]], device=self.device, dtype=self.dtype)
                         .expand(-1, self.dimension - self.reduced_space_dim))
 
@@ -803,13 +810,13 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         if self.q == 1:
             # Use analytic acquisition functions for single point
             if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-                self.__acqf_class = LogExpectedImprovement
+                self.__acqf_class = ExpectedImprovement
             elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
                 self.__acqf_class = ProbabilityOfImprovement
         else:
             # Use batch acquisition functions for multiple points
             if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-                self.__acqf_class = qLogExpectedImprovement
+                self.__acqf_class = qExpectedImprovement
             elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
                 self.__acqf_class = qProbabilityOfImprovement
 

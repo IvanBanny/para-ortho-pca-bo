@@ -124,6 +124,19 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--no_cont_log",
+        action="store_true",
+        help="Don't use the new penalization method with continuous log acqf penalization"
+    )
+
+    parser.add_argument(
+        "--p_factor",
+        type=float,
+        default=1e-3,
+        help="Penalty factor in pacqf (default: e1-3)"
+    )
+
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output"
@@ -149,7 +162,7 @@ def main():
         args.dimensions = [10]
         args.problems = [17, 20]
         args.runs = 5
-        args.budget_factor = 5
+        args.budget_factor = 5.0
         args.doe_factor = 2.0
         print("\nRunning in quick test mode with minimal settings")
 
@@ -169,6 +182,8 @@ def main():
         gpr_p=args.gpr_p,
         gpr_val_factor=args.gpr_val_factor,
         onorm_factor=args.onorm_factor,
+        use_cont_log=(not args.no_cont_log),
+        p_factor=args.p_factor,
         root_dir=os.getcwd(),
         experiment_name=args.experiment_dir,
         torch_config={

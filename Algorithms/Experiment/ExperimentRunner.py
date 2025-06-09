@@ -52,14 +52,16 @@ class ExperimentRunner:
         problem_ids: List[int],
         instances: Optional[List[int]] = None,
         num_runs: Optional[int] = None,
-        budget_factor: int = 15,
-        doe_factor: int = 4,
+        budget_factor: float = 15,
+        doe_factor: float = 4,
         random_seed: int = 69,
         acquisition_function: str = "EI",
         var_threshold: float = 0.95,
         gpr_p: float = 0.589013,
         gpr_val_factor: float = 0.100655,
         onorm_factor: float = 3.027467,
+        use_cont_log: bool = True,
+        p_factor: float = 1e-3,
         root_dir: str = os.getcwd(),
         experiment_name: str = "experiment",
         torch_config: Optional[Dict[str, Any]] = None,
@@ -78,13 +80,16 @@ class ExperimentRunner:
             doe_factor: Factor to determine initial design of experiments size (n_DoE = doe_factor * dim).
             random_seed: Randomness seed.
             acquisition_function: Acquisition function name.
-            var_threshold: PCA variance threshold.
+            var_threshold (float, optional): PCA variance threshold.
             gpr_p (float, optional): Percentage of ranked points to use in GPR fitting.
                                      Range [0.3, 1]. Defaults to 0.589013.
             gpr_val_factor (float, optional): Relative influence of value rank to distance rank
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.100655.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 3.027467.
+            use_cont_log (bool, optional): Whether to use the new penalization method with
+                                           continuous log acqf penalization. Defaults to True.
+            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-3.
             root_dir: Root directory for experiment output dir.
             experiment_name: Name of the experiment dir.
             torch_config: gpu configuration.
@@ -104,6 +109,8 @@ class ExperimentRunner:
         self.gpr_p = gpr_p
         self.gpr_val_factor = gpr_val_factor
         self.onorm_factor = onorm_factor
+        self.use_cont_log = use_cont_log
+        self.p_factor = p_factor
         self.root_dir = root_dir
         self.experiment_name = experiment_name
         self.torch_config = torch_config
@@ -141,8 +148,8 @@ class ExperimentRunner:
             # Get problem info
             problem = get_problem(fid=pid, instance=instance, dimension=dim)
             maximization = bool(problem.meta_data.optimization_type.value)
-            budget = self.budget_factor * dim + 50
-            n_doe = self.doe_factor * dim
+            budget = int(self.budget_factor * dim + 50)
+            n_doe = int(self.doe_factor * dim)
 
             if self.verbose:
                 print(f"\nRunning {run_id}:\n")
@@ -253,6 +260,8 @@ class ExperimentRunner:
                     var_threshold=self.var_threshold,
                     gpr_p=1.0,
                     gpr_val_factor=0.5,
+                    use_cont_log=self.use_cont_log,
+                    p_factor=self.p_factor,
                     **common_params
                 )
 
@@ -264,6 +273,8 @@ class ExperimentRunner:
                     gpr_p=self.gpr_p,
                     gpr_val_factor=self.gpr_val_factor,
                     onorm_factor=self.onorm_factor,
+                    use_cont_log=self.use_cont_log,
+                    p_factor=self.p_factor,
                     **common_params
                 )
 
