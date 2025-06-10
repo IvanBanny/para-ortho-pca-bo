@@ -146,7 +146,11 @@ class OPCABOVisualizer:
                                     for k in range(2)])
                 return max(x_range_x[0], x_range_y[0]) - line_margin, min(x_range_x[1], x_range_y[1]) + line_margin
 
-            pc1_x = torch.linspace(*x_range(mu, b[0], b[1], 0, 0), 500)
+            pc1_x = torch.linspace(
+                *x_range(mu,
+                         # b[0], b[1],  # For within-constraint pacqf plotting
+                         [min_vis[0], max_vis[0]], [min_vis[1], max_vis[1]],  # For within-vis pacqf plotting
+                         0, 0), 500)
             pc1_x_plain = torch.linspace(*x_range(mu, [min_vis[0], max_vis[0]], [min_vis[1], max_vis[1]],
                                                   0, 0.1), 2)
             pc2_x = torch.linspace(*x_range(mu, [min_vis[0], max_vis[0]], [min_vis[1], max_vis[1]],

@@ -28,6 +28,7 @@ class ExperimentConfig:
     doe_params: dict
     var_threshold: float
     n_components: int
+    vis_output_dir: str
 
 
 def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
@@ -55,6 +56,7 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
                 maximization=False,
                 verbose=True,
                 visualize=True,
+                vis_output_dir=config.vis_output_dir,
                 DoE_parameters=config.doe_params
             )
         case "pca" | "opca":
@@ -70,6 +72,7 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
                 maximization=False,
                 verbose=True,
                 visualize=True,
+                vis_output_dir=config.vis_output_dir,
                 # save_logs=True,
                 # log_dir="vis-logs",
                 DoE_parameters=config.doe_params
@@ -95,7 +98,7 @@ def run_single_experiment(pid: int, config: ExperimentConfig) -> None:
 config = ExperimentConfig(
     algorithm="opca",  # vanilla / pca / opca
     acquisition_function="expected_improvement",
-    # expected_improvement, probability_of_improvement, upper_confidence_bound
+    # expected_improvement, probability_of_improvement
     dimensions=2,
     problem_ids=list(range(15, 25)),
     instance=0,
@@ -105,7 +108,8 @@ config = ExperimentConfig(
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
     n_components=1,
-    var_threshold=0.95
+    var_threshold=0.95,
+    vis_output_dir="./visualizations/visualizations-opca-new"
 )
 
 # Run all problems in parallel

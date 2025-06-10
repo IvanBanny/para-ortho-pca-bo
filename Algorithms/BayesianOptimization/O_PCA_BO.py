@@ -37,8 +37,8 @@ from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 from Algorithms.utils.vis_utils import OPCABOVisualizer
 
 import warnings
-from botorch.exceptions import ModelFittingError
 from botorch.exceptions.warnings import NumericsWarning, OptimizationWarning, BadInitialCandidatesWarning
+from botorch.exceptions.errors import InfeasibilityError, ModelFittingError
 
 warnings.filterwarnings("ignore", category=NumericsWarning)  # Filter warnings from EI
 warnings.filterwarnings("ignore", category=OptimizationWarning)
@@ -80,8 +80,8 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             gpr_p: float = 0.589013,
             gpr_val_factor: float = 0.100655,
             onorm_factor: float = 3.027467,
-            use_cont_log: bool = True,
-            p_factor: float = 1e-3,
+            use_cont_log: bool = False,
+            p_factor: float = 1e-2,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
             torch_config: Optional[Dict[str, Any]] = None,
@@ -109,7 +109,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.100655.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 3.027467.
-            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-3.
+            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
             use_cont_log (bool, optional): Whether to use the new penalization method with
                                            continuous log acqf penalization. Defaults to True.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
@@ -253,7 +253,9 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             outside_bounds = ~(new_x >= bounds_torch[0]).all(dim=1) | ~(new_x <= bounds_torch[1]).all(dim=1)
 
             if self.verbose and not (~outside_bounds).all().item():
-                print(f"\nWarning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
+                print("\n========================================================")
+                print(f"Warning: transformed candidates are out of bounds: {new_x[outside_bounds]}")
+                print("========================================================\n")
 
             new_f = self.problem(new_x)
 
@@ -286,9 +288,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
             # Save logs
             if self.save_logs:
-                acqf_values_log, penalty_log, pei_values_log = self.__pacqf.log_forward(
-                    self.__z_evals.unsqueeze(1)
-                )
+                acqf_values_log, penalty_log, pei_values_log = self.__pacqf.log_forward(self.__z_evals.unsqueeze(1))
                 arrays = [
                     self.x_evals, self.__z_evals.detach().numpy(), self.f_evals,
                     acqf_values_log.detach().numpy(),
@@ -735,14 +735,24 @@ class O_PCA_BO(AbstractBayesianOptimizer):
 
             sample_size_multiplier = max(1, int(self.onorm_factor *
                                                 max(1, int((self.dimension-self.reduced_space_dim) ** 0.5))))
-            ortho_lin_comb = sample_q_batches_from_polytope(
-                n=self.ortho_samples*sample_size_multiplier,
-                q=1,
-                bounds=ortho_bounds,
-                n_burnin=max(100, 10 * (self.dimension - self.reduced_space_dim)),
-                n_thinning=max(4, (self.dimension - self.reduced_space_dim) // 3),
-                inequality_constraints=inequality_constraints,
-            ).squeeze(1)
+
+            try:
+                ortho_lin_comb = sample_q_batches_from_polytope(
+                    n=self.ortho_samples*sample_size_multiplier,
+                    q=1,
+                    bounds=ortho_bounds,
+                    n_burnin=max(100, 10 * (self.dimension - self.reduced_space_dim)),
+                    n_thinning=max(4, (self.dimension - self.reduced_space_dim) // 3),
+                    inequality_constraints=inequality_constraints,
+                ).squeeze(1)
+            except InfeasibilityError as e:
+                print(f"\nFailed polytope sampling for candidate {candidate} with r = {r}")
+                # raise e
+                ortho_lin_comb = (
+                    torch.zeros(self.ortho_samples*sample_size_multiplier,
+                                self.dimension - self.reduced_space_dim).
+                    to(device=self.device, dtype=self.dtype)
+                )
 
             ortho_part = ortho_lin_comb @ self.component_matrix[self.reduced_space_dim:]
 

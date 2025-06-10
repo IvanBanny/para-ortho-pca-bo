@@ -124,16 +124,16 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--no_cont_log",
+        "--use_cont_log",
         action="store_true",
-        help="Don't use the new penalization method with continuous log acqf penalization"
+        help="Use the new penalization method with continuous log acqf penalization"
     )
 
     parser.add_argument(
         "--p_factor",
         type=float,
-        default=1e-3,
-        help="Penalty factor in pacqf (default: e1-3)"
+        default=1e-2,
+        help="Penalty factor in pacqf (default: e1-2)"
     )
 
     parser.add_argument(
@@ -161,9 +161,10 @@ def main():
         args.batch = [1, 3]
         args.dimensions = [10]
         args.problems = [17, 20]
-        args.runs = 5
+        args.runs = 1
         args.budget_factor = 5.0
         args.doe_factor = 2.0
+        args.experiment_dir = "./quick"
         print("\nRunning in quick test mode with minimal settings")
 
     # Initialize experiment runner
@@ -182,7 +183,7 @@ def main():
         gpr_p=args.gpr_p,
         gpr_val_factor=args.gpr_val_factor,
         onorm_factor=args.onorm_factor,
-        use_cont_log=(not args.no_cont_log),
+        use_cont_log=args.use_cont_log,
         p_factor=args.p_factor,
         root_dir=os.getcwd(),
         experiment_name=args.experiment_dir,
@@ -202,11 +203,18 @@ def main():
     print(f"  Batch sizes: {args.batch}")
     print(f"  Dimensions: {args.dimensions}")
     print(f"  Problems: {args.problems}")
-    print(f"  Runs: {args.runs}")
+    print(f"  Instances: {range(args.runs) if args.instances is None else args.instances}")
     print(f"  Budget factor: {args.budget_factor}")
     print(f"  DoE factor: {args.doe_factor}")
+    print(f"  Random_seed: {args.doe_factor}")
     print(f"  Acquisition function: {args.acquisition}")
     print(f"  PCA variance threshold: {args.var_threshold}")
+    print(f"  gpr_p: {args.gpr_p}")
+    print(f"  gpr_val_factor: {args.gpr_val_factor}")
+    print(f"  onorm_factor: {args.onorm_factor}")
+    print(f"  use_cont_log: {args.use_cont_log}")
+    if args.use_cont_log:
+        print(f"  p_factor: {args.p_factor}")
     print(f"  Output directory: {args.experiment_dir}")
     print(f"  Verbose mode: {args.verbose}")
     print("\nStarting experiment...\n")

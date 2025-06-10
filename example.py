@@ -26,22 +26,26 @@ class ExperimentConfig:
     doe_params: dict
     var_threshold: float
     n_components: int
+    visualize: bool
+    vis_output_dir: str
 
 
 config = ExperimentConfig(
     algorithm="opca",  # vanilla / pca / opca
     acquisition_function="expected_improvement",
-    # expected_improvement, probability_of_improvement, upper_confidence_bound
-    dimensions=10,
-    problem_id=20,
+    # expected_improvement, probability_of_improvement
+    dimensions=2,
+    problem_id=15,
     instance=0,
-    budget=40,
+    budget=100,
     n_doe=20,
     batch_size=3,
     random_seed=69,
     doe_params={"criterion": "center", "iterations": 1000},
-    n_components=0,
-    var_threshold=0.95
+    n_components=1,
+    var_threshold=0.95,
+    visualize=True,
+    vis_output_dir="./test"
 )
 
 dump_path = os.path.join(os.getcwd(), "example-logs")
@@ -67,8 +71,8 @@ match config.algorithm:
             random_seed=config.random_seed,
             maximization=False,
             verbose=True,
-            # visualize=True,
-            # vis_output_dir="./test",
+            visualize=config.visualize,
+            vis_output_dir=config.vis_output_dir,
             DoE_parameters=config.doe_params
         )
     case "pca" | "opca":
@@ -83,10 +87,10 @@ match config.algorithm:
             random_seed=config.random_seed,
             maximization=False,
             verbose=True,
-            # visualize=True,
-            # vis_output_dir="./test",
-            # save_logs=True,
-            # log_dir="example-logs",
+            visualize=config.visualize,
+            vis_output_dir=config.vis_output_dir,
+            save_logs=True,
+            log_dir="./test",
             DoE_parameters=config.doe_params
         )
     case _:

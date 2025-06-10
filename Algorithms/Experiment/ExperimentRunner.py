@@ -60,8 +60,8 @@ class ExperimentRunner:
         gpr_p: float = 0.589013,
         gpr_val_factor: float = 0.100655,
         onorm_factor: float = 3.027467,
-        use_cont_log: bool = True,
-        p_factor: float = 1e-3,
+        use_cont_log: bool = False,
+        p_factor: float = 1e-2,
         root_dir: str = os.getcwd(),
         experiment_name: str = "experiment",
         torch_config: Optional[Dict[str, Any]] = None,
@@ -89,7 +89,7 @@ class ExperimentRunner:
                                             0 for uniform sampling. Defaults to 3.027467.
             use_cont_log (bool, optional): Whether to use the new penalization method with
                                            continuous log acqf penalization. Defaults to True.
-            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-3.
+            p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
             root_dir: Root directory for experiment output dir.
             experiment_name: Name of the experiment dir.
             torch_config: gpu configuration.
