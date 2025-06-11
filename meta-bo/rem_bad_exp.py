@@ -16,13 +16,13 @@ def count_lines_in_file(file_path):
 
 
 def main():
-    meta_bo_path = Path("meta-bo")
+    meta_bo_path = Path("../meta-bo-data")
 
     if not meta_bo_path.exists():
         print(f"Directory '{meta_bo_path}' does not exist")
         return
 
-    valid_line_counts = {151, 251, 451}
+    valid_line_counts = {201, 351, 651}
     deleted_count = 0
     kept_count = 0
     error_count = 0

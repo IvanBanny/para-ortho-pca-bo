@@ -105,22 +105,22 @@ def parse_arguments():
     parser.add_argument(
         "--gpr_p",
         type=float,
-        default=0.589013,
-        help="Percentage of ranked points to use in GPR fitting (default: 0.589013)"
+        default=0.842655,
+        help="Percentage of ranked points to use in GPR fitting (default: 0.842655)"
     )
 
     parser.add_argument(
         "--gpr_val_factor",
         type=float,
-        default=0.100655,
-        help="Relative influence of value rank to distance rank in GPR fitting point selection (default: 0.100655)"
+        default=0.417592,
+        help="Relative influence of value rank to distance rank in GPR fitting point selection (default: 0.417592)"
     )
 
     parser.add_argument(
         "--onorm_factor",
         type=float,
-        default=3.027467,
-        help="O-norm sampling multiplier (default: 3.027467)"
+        default=4.0,
+        help="O-norm sampling multiplier (default: 4.0)"
     )
 
     parser.add_argument(
@@ -213,8 +213,7 @@ def main():
     print(f"  gpr_val_factor: {args.gpr_val_factor}")
     print(f"  onorm_factor: {args.onorm_factor}")
     print(f"  use_cont_log: {args.use_cont_log}")
-    if args.use_cont_log:
-        print(f"  p_factor: {args.p_factor}")
+    print(f"  p_factor: {args.p_factor}")
     print(f"  Output directory: {args.experiment_dir}")
     print(f"  Verbose mode: {args.verbose}")
     print("\nStarting experiment...\n")

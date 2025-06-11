@@ -3,7 +3,7 @@ import polars as pl
 
 from Algorithms.utils.experiment_loss import get_loss
 
-df = get_loss("meta-bo")
+df = get_loss("meta-bo-data")
 
 with pl.Config(tbl_rows=200, tbl_cols=20):
     print(df)

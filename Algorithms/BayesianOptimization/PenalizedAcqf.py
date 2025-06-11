@@ -34,7 +34,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             pca_r2d_fn: Function to map points from reduced to original space
             use_cont_log: Whether to use the new penalization method with continuous log acqf penalization
             p_factor: Factor to control the strength of the penalty (default: 1e-2)
-            epsilon: Epsilon for log (default: 1e-8)
+            epsilon: Epsilon for log (default: 1e-6)
         """
         super().__init__(model=model)
         # Expected Improvement component

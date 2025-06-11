@@ -57,9 +57,9 @@ class ExperimentRunner:
         random_seed: int = 69,
         acquisition_function: str = "EI",
         var_threshold: float = 0.95,
-        gpr_p: float = 0.589013,
-        gpr_val_factor: float = 0.100655,
-        onorm_factor: float = 3.027467,
+        gpr_p: float = 0.842655,
+        gpr_val_factor: float = 0.417592,
+        onorm_factor: float = 4.0,
         use_cont_log: bool = False,
         p_factor: float = 1e-2,
         root_dir: str = os.getcwd(),
@@ -82,11 +82,11 @@ class ExperimentRunner:
             acquisition_function: Acquisition function name.
             var_threshold (float, optional): PCA variance threshold.
             gpr_p (float, optional): Percentage of ranked points to use in GPR fitting.
-                                     Range [0.3, 1]. Defaults to 0.589013.
+                                     Range [0.3, 1]. Defaults to 0.842655.
             gpr_val_factor (float, optional): Relative influence of value rank to distance rank
-                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.100655.
+                                              in GPR fitting point selection. Range [0, 1]. Defaults to 0.417592.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
-                                            0 for uniform sampling. Defaults to 3.027467.
+                                            0 for uniform sampling. Defaults to 4.0.
             use_cont_log (bool, optional): Whether to use the new penalization method with
                                            continuous log acqf penalization. Defaults to True.
             p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.

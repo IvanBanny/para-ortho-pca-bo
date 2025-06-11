@@ -351,8 +351,6 @@ class ExperimentVisualizer:
 
                 algorithms = self.get_algo_list(self.data)
 
-                from matplotlib.patches import Rectangle
-
                 legend_handles = []
                 for i, algorithm in enumerate(algorithms):
                     handle = Rectangle(

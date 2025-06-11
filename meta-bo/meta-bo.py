@@ -53,6 +53,8 @@ class BayesianOptimizer:
     def load_current_data(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         """Load current evaluation data. Returns None if no data available."""
         df = get_loss("meta-bo")
+        with pl.Config(tbl_rows=300, tbl_cols=20):
+            print(df)
 
         # Check if DataFrame is empty
         if df.height == 0:
@@ -165,7 +167,7 @@ class BayesianOptimizer:
 
         # Generate next candidates using BO
         print("Generating next candidates using Bayesian Optimization...")
-        candidates = self.get_next_candidates(X, y, n_candidates=10)
+        candidates = self.get_next_candidates(X, y, n_candidates=5)
         self.save_candidates(candidates)
 
 
