@@ -80,7 +80,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             gpr_p: float = 0.842655,
             gpr_val_factor: float = 0.417592,
             onorm_factor: float = 4.0,
-            use_cont_log: bool = False,
+            use_log: bool = False,
             p_factor: float = 1e-2,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
@@ -110,7 +110,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 4.0.
             p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
-            use_cont_log (bool, optional): Whether to use the new penalization method with
+            use_log (bool, optional): Whether to use the new penalization method with
                                            continuous log acqf penalization. Defaults to True.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
@@ -133,7 +133,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         self.gpr_val_factor = gpr_val_factor
         self.onorm_factor = onorm_factor
         self.ortho_samples = ortho_samples
-        self.use_cont_log = use_cont_log
+        self.use_log = use_log
         self.p_factor = p_factor
 
         # Set PCA parameters
@@ -610,7 +610,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             model=self.__model_obj,
             original_bounds=original_bounds,
             pca_r2d_fn=self._transform_points_to_original_space,
-            use_cont_log=self.use_cont_log,
+            use_log=self.use_log,
             p_factor=self.p_factor,
         )
 

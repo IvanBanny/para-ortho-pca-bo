@@ -21,9 +21,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: Model,
             original_bounds: Tensor,
             pca_r2d_fn: Callable,
-            use_cont_log: bool = False,
-            p_factor: float = 1e-2,
-            epsilon: float = 1e-6
+            use_log: bool = False,
+            p_factor: float = 1e-2
     ) -> None:
         """Initialize Penalized Expected Improvement.
 
@@ -32,9 +31,8 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: A fitted model
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
             pca_r2d_fn: Function to map points from reduced to original space
-            use_cont_log: Whether to use the new penalization method with continuous log acqf penalization
+            use_log: Whether to use the new penalization method with continuous log acqf penalization
             p_factor: Factor to control the strength of the penalty (default: 1e-2)
-            epsilon: Epsilon for log (default: 1e-6)
         """
         super().__init__(model=model)
         # Expected Improvement component
@@ -44,11 +42,9 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # PCA transform function reference
         self.pca_r2d_fn = pca_r2d_fn
         # Use the new penalization method with continuous log acqf penalization
-        self.use_cont_log = use_cont_log
+        self.use_log = use_log
         # Penalty scaling factor
         self.p_factor = p_factor
-        # Log epsilon
-        self.epsilon = epsilon
 
     @t_batch_mode_transform()
     def forward(self, X: Tensor) -> Tensor:
@@ -73,11 +69,14 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
 
         acqf_vals = self.acquisition_function(X)
 
-        if self.use_cont_log:
-            penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
-            return torch.log(acqf_vals * penalty + self.epsilon)
+        if self.use_log:
+            # penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
+            # return torch.log(acqf_vals * penalty + self.epsilon)
+            return torch.where(sum_q_distances == 0,
+                               torch.log(1.0 + acqf_vals),
+                               -sum_q_distances / self.p_factor)
 
-        return torch.where(sum_q_distances == 0.0, acqf_vals, -sum_q_distances / self.p_factor)\
+        return torch.where(sum_q_distances == 0, acqf_vals, -sum_q_distances / self.p_factor)
 
 
     def log_forward(self, X: Tensor) -> tuple[Tensor]:
@@ -104,9 +103,14 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
 
         acqf_vals = self.acquisition_function(X)
 
-        if self.use_cont_log:
-            penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
-            return acqf_vals, penalty, torch.log(acqf_vals * penalty + self.epsilon)
+        if self.use_log:
+            # penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
+            # return acqf_vals, penalty, torch.log(acqf_vals * penalty + self.epsilon)
+            return (acqf_vals,
+                    -sum_q_distances / self.p_factor,
+                    torch.where(sum_q_distances == 0,
+                                torch.log(1.0 + acqf_vals),
+                                -sum_q_distances / self.p_factor))
 
         return (acqf_vals, -sum_q_distances / self.p_factor,
-                torch.where(sum_q_distances == 0.0, acqf_vals, -sum_q_distances / self.p_factor))
+                torch.where(sum_q_distances == 0, acqf_vals, -sum_q_distances / self.p_factor))

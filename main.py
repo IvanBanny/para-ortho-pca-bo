@@ -124,9 +124,9 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--use_cont_log",
+        "--use_log",
         action="store_true",
-        help="Use the new penalization method with continuous log acqf penalization"
+        help="Use the new penalization method with log acqf penalization"
     )
 
     parser.add_argument(
@@ -183,7 +183,7 @@ def main():
         gpr_p=args.gpr_p,
         gpr_val_factor=args.gpr_val_factor,
         onorm_factor=args.onorm_factor,
-        use_cont_log=args.use_cont_log,
+        use_log=args.use_log,
         p_factor=args.p_factor,
         root_dir=os.getcwd(),
         experiment_name=args.experiment_dir,
@@ -212,7 +212,7 @@ def main():
     print(f"  gpr_p: {args.gpr_p}")
     print(f"  gpr_val_factor: {args.gpr_val_factor}")
     print(f"  onorm_factor: {args.onorm_factor}")
-    print(f"  use_cont_log: {args.use_cont_log}")
+    print(f"  use_log: {args.use_log}")
     print(f"  p_factor: {args.p_factor}")
     print(f"  Output directory: {args.experiment_dir}")
     print(f"  Verbose mode: {args.verbose}")
