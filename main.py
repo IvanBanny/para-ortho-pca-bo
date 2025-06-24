@@ -119,8 +119,8 @@ def parse_arguments():
     parser.add_argument(
         "--onorm_factor",
         type=float,
-        default=4.0,
-        help="O-norm sampling multiplier (default: 4.0)"
+        default=8.0,
+        help="O-norm sampling multiplier (default: 8.0)"
     )
 
     parser.add_argument(

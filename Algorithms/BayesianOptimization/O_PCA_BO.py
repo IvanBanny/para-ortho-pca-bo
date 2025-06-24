@@ -79,7 +79,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             var_threshold: float = 0.95,
             gpr_p: float = 0.842655,
             gpr_val_factor: float = 0.417592,
-            onorm_factor: float = 4.0,
+            onorm_factor: float = 8.0,
             use_log: bool = False,
             p_factor: float = 1e-2,
             acquisition_function: str = "expected_improvement",
@@ -108,7 +108,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             gpr_val_factor (float, optional): Relative influence of value rank to distance rank
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.417592.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
-                                            0 for uniform sampling. Defaults to 4.0.
+                                            0 for uniform sampling. Defaults to 8.0.
             p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
             use_log (bool, optional): Whether to use the new penalization method with
                                            continuous log acqf penalization. Defaults to True.
