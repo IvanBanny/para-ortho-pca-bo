@@ -21,7 +21,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: Model,
             original_bounds: Tensor,
             pca_r2d_fn: Callable,
-            use_log: bool = False,
+            cont_acqf: bool = True,
             p_factor: float = 1e-2
     ) -> None:
         """Initialize Penalized Expected Improvement.
@@ -31,7 +31,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
             model: A fitted model
             original_bounds: Tensor of shape (dim, 2) containing the bounds of the original space
             pca_r2d_fn: Function to map points from reduced to original space
-            use_log: Whether to use the new penalization method with continuous log acqf penalization
+            cont_acqf: Whether to use the new penalization method with continuous acqf penalization
             p_factor: Factor to control the strength of the penalty (default: 1e-2)
         """
         super().__init__(model=model)
@@ -42,7 +42,7 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         # PCA transform function reference
         self.pca_r2d_fn = pca_r2d_fn
         # Use the new penalization method with continuous log acqf penalization
-        self.use_log = use_log
+        self.cont_acqf = cont_acqf
         # Penalty scaling factor
         self.p_factor = p_factor
 
@@ -62,21 +62,15 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         X_flat = X.view(-1, X.shape[-1])  # shape [(batch_shape * q) x r]
         X_orig = self.pca_r2d_fn(X_flat).view(*X.shape[: -1], -1)  # shape [batch_shape x q x d]
 
-        X_clamped = X_orig.clamp(min=lb, max=ub)  # shape [batch_shape x q x d]
-
-        distances_per_point = torch.norm(X_orig - X_clamped, dim=-1)  # shape [batch_shape x q]
-        sum_q_distances = distances_per_point.sum(dim=-1)  # shape [batch_shape]
+        dists_to_bounds = torch.clamp(lb - X_orig, min=0) + torch.clamp(X_orig - ub, min=0)  # shape [batch_shape]
+        total_dists = dists_to_bounds.norm(dim=-1).sum(dim=-1)  # shape [batch_shape]
 
         acqf_vals = self.acquisition_function(X)
 
-        if self.use_log:
-            # penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
-            # return torch.log(acqf_vals * penalty + self.epsilon)
-            return torch.where(sum_q_distances == 0,
-                               torch.log(1.0 + acqf_vals),
-                               -sum_q_distances / self.p_factor)
+        if self.cont_acqf:
+            return acqf_vals - total_dists / self.p_factor
 
-        return torch.where(sum_q_distances == 0, acqf_vals, -sum_q_distances / self.p_factor)
+        return torch.where(total_dists == 0, acqf_vals, -total_dists / self.p_factor)
 
 
     def log_forward(self, X: Tensor) -> tuple[Tensor]:
@@ -96,21 +90,13 @@ class PenalizedAcqf(AnalyticAcquisitionFunction):
         X_flat = X.view(-1, X.shape[-1])  # shape [(batch_shape * q) x r]
         X_orig = self.pca_r2d_fn(X_flat).view(*X.shape[: -1], -1)  # shape [batch_shape x q x d]
 
-        X_clamped = X_orig.clamp(min=lb, max=ub)  # shape [batch_shape x q x d]
-
-        distances_per_point = torch.norm(X_orig - X_clamped, dim=-1)  # shape [batch_shape x q]
-        sum_q_distances = distances_per_point.sum(dim=-1)  # shape [batch_shape]
+        dists_to_bounds = torch.clamp(lb - X_orig, min=0) + torch.clamp(X_orig - ub, min=0)  # shape [batch_shape]
+        total_dists = dists_to_bounds.norm(dim=-1).sum(dim=-1)  # shape [batch_shape]
 
         acqf_vals = self.acquisition_function(X)
 
-        if self.use_log:
-            # penalty = 1.0 / (1.0 + sum_q_distances / self.p_factor)
-            # return acqf_vals, penalty, torch.log(acqf_vals * penalty + self.epsilon)
-            return (acqf_vals,
-                    -sum_q_distances / self.p_factor,
-                    torch.where(sum_q_distances == 0,
-                                torch.log(1.0 + acqf_vals),
-                                -sum_q_distances / self.p_factor))
+        if self.cont_acqf:
+            return acqf_vals, total_dists / self.p_factor, acqf_vals - total_dists / self.p_factor
 
-        return (acqf_vals, -sum_q_distances / self.p_factor,
-                torch.where(sum_q_distances == 0, acqf_vals, -sum_q_distances / self.p_factor))
+        return (acqf_vals, total_dists / self.p_factor,
+                torch.where(total_dists == 0, acqf_vals, -total_dists / self.p_factor))

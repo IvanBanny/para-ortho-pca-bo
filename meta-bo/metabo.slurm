@@ -5,7 +5,7 @@
 #SBATCH --mail-user=""
 #SBATCH --mail-type=FAIL
 #SBATCH --partition=cpu-short
-#SBATCH --time=00:10:00
+#SBATCH --time=00:30:00
 #SBATCH --ntasks=1
 #SBATCH --array=0-95
 #SBATCH --constraint=AMD.Zen4
@@ -15,7 +15,7 @@
 conda activate pcabo
 
 algo="opca"
-batch=5
+batch=1
 dims=(10 20 40)
 pids=(15 16 17 18 20 21 22 24)
 iids=({0..3})

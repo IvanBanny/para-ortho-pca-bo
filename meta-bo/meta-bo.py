@@ -11,7 +11,7 @@ from botorch.utils.transforms import normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from Algorithms.utils.experiment_loss import get_loss
+from Algorithms.utils.experiment_loss import get_opca_loss
 
 
 class BayesianOptimizer:
@@ -19,7 +19,7 @@ class BayesianOptimizer:
         # Parameter bounds: [gpr_p, gpr_val_factor, onorm_factor]
         self.bounds = torch.tensor([
             [0.3, 0.0, 0.0],  # lower bounds
-            [1.0, 1.0, 4.0]  # upper bounds
+            [1.0, 1.0, 8.0]  # upper bounds
         ], dtype=torch.float64)
 
     def sample_initial_candidates(self, n_candidates: int = 20) -> torch.Tensor:
@@ -52,7 +52,7 @@ class BayesianOptimizer:
 
     def load_current_data(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         """Load current evaluation data. Returns None if no data available."""
-        df = get_loss("meta-bo")
+        df = get_opca_loss("meta-bo")
         with pl.Config(tbl_rows=300, tbl_cols=20):
             print(df)
 

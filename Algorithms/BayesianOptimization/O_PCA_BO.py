@@ -19,9 +19,9 @@ from botorch.fit import fit_gpytorch_mll
 from botorch.models.transforms.input import Normalize
 from botorch.acquisition import (
     AcquisitionFunction,
-    ExpectedImprovement,
+    LogExpectedImprovement,
     ProbabilityOfImprovement,
-    qExpectedImprovement,
+    qLogExpectedImprovement,
     qProbabilityOfImprovement
 )
 from botorch.acquisition.objective import GenericMCObjective
@@ -80,7 +80,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             gpr_p: float = 0.842655,
             gpr_val_factor: float = 0.417592,
             onorm_factor: float = 8.0,
-            use_log: bool = False,
+            cont_acqf: bool = True,
             p_factor: float = 1e-2,
             acquisition_function: str = "expected_improvement",
             random_seed: int = 69,
@@ -110,8 +110,8 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 8.0.
             p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
-            use_log (bool, optional): Whether to use the new penalization method with
-                                           continuous log acqf penalization. Defaults to True.
+            cont_acqf (bool, optional): Whether to use the new penalization method with
+                                           continuous acqf penalization. Defaults to True.
             acquisition_function (str): Acquisition function name. Defaults to "expected_improvement".
             random_seed (int, optional): Random seed for reproducibility. Defaults to 69.
             torch_config (Dict[str, Any], optional): gpu configuration.
@@ -133,7 +133,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         self.gpr_val_factor = gpr_val_factor
         self.onorm_factor = onorm_factor
         self.ortho_samples = ortho_samples
-        self.use_log = use_log
+        self.cont_acqf = cont_acqf
         self.p_factor = p_factor
 
         # Set PCA parameters
@@ -610,7 +610,7 @@ class O_PCA_BO(AbstractBayesianOptimizer):
             model=self.__model_obj,
             original_bounds=original_bounds,
             pca_r2d_fn=self._transform_points_to_original_space,
-            use_log=self.use_log,
+            cont_acqf=self.cont_acqf,
             p_factor=self.p_factor,
         )
 
@@ -820,13 +820,13 @@ class O_PCA_BO(AbstractBayesianOptimizer):
         if self.q == 1:
             # Use analytic acquisition functions for single point
             if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-                self.__acqf_class = ExpectedImprovement
+                self.__acqf_class = LogExpectedImprovement
             elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
                 self.__acqf_class = ProbabilityOfImprovement
         else:
             # Use batch acquisition functions for multiple points
             if self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[0]:
-                self.__acqf_class = qExpectedImprovement
+                self.__acqf_class = qLogExpectedImprovement
             elif self.__acquisition_function_name == ALLOWED_ACQUISITION_FUNCTION_STRINGS[1]:
                 self.__acqf_class = qProbabilityOfImprovement
 

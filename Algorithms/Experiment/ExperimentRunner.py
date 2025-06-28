@@ -60,7 +60,7 @@ class ExperimentRunner:
         gpr_p: float = 0.842655,
         gpr_val_factor: float = 0.417592,
         onorm_factor: float = 8.0,
-        use_log: bool = False,
+        cont_acqf: bool = True,
         p_factor: float = 1e-2,
         root_dir: str = os.getcwd(),
         experiment_name: str = "experiment",
@@ -87,8 +87,8 @@ class ExperimentRunner:
                                               in GPR fitting point selection. Range [0, 1]. Defaults to 0.417592.
             onorm_factor (float, optional): O-norm sampling multiplier. Range [0, +inf].
                                             0 for uniform sampling. Defaults to 8.0.
-            use_log (bool, optional): Whether to use the new penalization method with
-                                           continuous log acqf penalization. Defaults to True.
+            cont_acqf (bool, optional): Whether to use the new penalization method with
+                                           continuous acqf penalization. Defaults to True.
             p_factor (float, optional): pacqf penalty factor. Defaults to 1e-2.
             root_dir: Root directory for experiment output dir.
             experiment_name: Name of the experiment dir.
@@ -109,7 +109,7 @@ class ExperimentRunner:
         self.gpr_p = gpr_p
         self.gpr_val_factor = gpr_val_factor
         self.onorm_factor = onorm_factor
-        self.use_log = use_log
+        self.cont_acqf = cont_acqf
         self.p_factor = p_factor
         self.root_dir = root_dir
         self.experiment_name = experiment_name
@@ -260,7 +260,7 @@ class ExperimentRunner:
                     var_threshold=self.var_threshold,
                     gpr_p=1.0,
                     gpr_val_factor=0.5,
-                    use_log=self.use_log,
+                    cont_acqf=self.cont_acqf,
                     p_factor=self.p_factor,
                     **common_params
                 )
@@ -273,7 +273,7 @@ class ExperimentRunner:
                     gpr_p=self.gpr_p,
                     gpr_val_factor=self.gpr_val_factor,
                     onorm_factor=self.onorm_factor,
-                    use_log=self.use_log,
+                    cont_acqf=self.cont_acqf,
                     p_factor=self.p_factor,
                     **common_params
                 )
