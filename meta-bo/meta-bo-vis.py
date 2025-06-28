@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import polars as pl
 
-from Algorithms.utils.experiment_loss import get_opca_loss
+from Algorithms import get_opca_loss
 
 df = get_opca_loss("meta-bo-data")
 

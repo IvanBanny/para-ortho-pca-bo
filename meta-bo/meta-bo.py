@@ -11,7 +11,7 @@ from botorch.utils.transforms import normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from Algorithms.utils.experiment_loss import get_opca_loss
+from Algorithms import get_opca_loss
 
 
 class BayesianOptimizer:
