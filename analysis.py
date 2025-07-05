@@ -6,7 +6,7 @@ Performs Wilcoxon rank-sum tests comparing algorithms.
 
 import os
 import argparse
-from Algorithms.Experiment.ExperimentAnalyzer import ExperimentAnalyzer
+from src.Experiment.ExperimentAnalyzer import ExperimentAnalyzer
 
 
 def parse_arguments():
@@ -34,7 +34,7 @@ def parse_arguments():
         type=str,
         nargs="+",
         default=None,
-        help="Algorithms to analyze (default: all found in data)"
+        help="src to analyze (default: all found in data)"
     )
 
     parser.add_argument(
@@ -76,7 +76,7 @@ def main():
     print("=" * 50)
     print(f"Experiment directory: {args.experiment_dir}")
     print(f"Output directory: {args.output_dir}")
-    print(f"Algorithms: {args.algorithms or 'all'}")
+    print(f"src: {args.algorithms or 'all'}")
     print(f"Batch sizes: {args.batches or 'all'}")
     print(f"Dimensions: {args.dimensions or 'all'}")
     print(f"Cache: {not args.no_cache}")

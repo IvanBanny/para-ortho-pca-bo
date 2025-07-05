@@ -7,7 +7,7 @@ Vanilla BO, PCA-BO, and O-PCA-BO algorithms.
 
 import os
 import argparse
-from Algorithms import ExperimentVisualizer
+from src import ExperimentVisualizer
 
 
 def parse_arguments():
@@ -35,7 +35,7 @@ def parse_arguments():
         type=str,
         nargs="+",
         default=None,
-        help="Algorithms to analyze (default: all found in data)"
+        help="src to analyze (default: all found in data)"
     )
 
     parser.add_argument(
@@ -110,7 +110,7 @@ def main():
     print("\nBayesian Optimization Visualization Configuration:")
     print(f"  Experiment directory: {args.experiment_dir}")
     print(f"  Output directory: {visualizer.output_dir}")
-    print(f"  Algorithms: {args.algorithms or 'all'}")
+    print(f"  src: {args.algorithms or 'all'}")
     print(f"  Batch sizes: {args.batches or 'all'}")
     print(f"  Dimensions: {args.dimensions or 'all'}")
     print(f"  Functions: {args.functions or 'all'}")

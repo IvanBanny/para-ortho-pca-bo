@@ -1,4 +1,4 @@
-"""This is a utility module that contains utility functions that are used in the Algorithms module."""
+"""This is a utility module that contains utility functions that are used in the src module."""
 
 import numpy as np
 from typing import List, Tuple, Optional, Union, Callable

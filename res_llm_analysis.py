@@ -10,7 +10,7 @@ import os
 import numpy as np
 import polars as pl
 
-import Algorithms.utils.iohreader as iohreader
+import src.utils.iohreader as iohreader
 
 
 class ExperimentAnalyzer:
@@ -29,7 +29,7 @@ class ExperimentAnalyzer:
 
         Args:
             experiment_dir: Directory containing experiment data.
-            algorithms: Algorithms to analyze (None for all).
+            algorithms: src to analyze (None for all).
             batch_sizes: Batch sizes to analyze (None for all).
             dimensions: List of problem dimensions to analyze (None for all).
             functions: List of function IDs to analyze (None for all).

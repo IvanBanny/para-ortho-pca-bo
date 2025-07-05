@@ -1,6 +1,6 @@
 from typing import List, Optional, Union, Dict
 import polars as pl
-import Algorithms.utils.iohreader as iohreader
+import src.utils.iohreader as iohreader
 
 
 def get_loss(
@@ -16,7 +16,7 @@ def get_loss(
 
     Args:
         experiment_dir: The directory containing the experiment.
-        algorithms: Algorithms to consider (None for all).
+        algorithms: src to consider (None for all).
         batch_sizes: Batch sizes to consider (None for all).
         dimensions: Dimensions to consider (None for all).
         functions: Functions to consider (None for all).
@@ -175,9 +175,8 @@ def _get_algorithm_parameters(df: pl.DataFrame, varying_columns: List[str]) -> L
     """Extract algorithm parameters from varying columns."""
     experimental_conditions = {"dimension", "batch_size", "function_id", "algorithm_name"}
     data_columns = {
-        "data_id", "iteration", "best_y", "raw_y", "raw_y_best",
-        "evaluations", "evals", "time", "instance", "random_seed",
-        "doe", "current_y_best", "current_y"
+        "data_id", "iteration", "best_y", "raw_y_best", "evaluations",
+        "evals", "time", "instance", "random_seed", "doe"
     }
 
     # Sort to ensure consistent column ordering
@@ -199,14 +198,14 @@ def _calculate_run_metrics(df: pl.DataFrame) -> pl.DataFrame:
     f_init = (
         df_with_iteration
         .filter(pl.col("iteration") == pl.col("doe") - 1)
-        .select(["data_id", pl.col("current_y_best").alias("f_init")])
+        .select(["data_id", pl.col("raw_y_best").alias("f_init")])
     )
 
     # Join and calculate normalized gaps
     df_normalized = (
         df_with_iteration
         .join(f_init, on="data_id")
-        .with_columns((pl.col("current_y_best") / pl.col("f_init")).alias("normalized_gap"))
+        .with_columns((pl.col("raw_y_best") / pl.col("f_init")).alias("normalized_gap"))
     )
 
     # Calculate metrics per run with constants
@@ -281,7 +280,7 @@ def get_opca_loss(experiment_dir) -> pl.DataFrame:
             'loss': []
         })
 
-    cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best', 'current_y_best']
+    cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best', 'raw_y_best']
 
     df = pl.concat([manager.select(dimensions=[d]).load(False, True)
                    .select(cols).drop_nulls() for d in manager.overview["dimension"].unique().to_list()])
@@ -297,8 +296,8 @@ def get_opca_loss(experiment_dir) -> pl.DataFrame:
     experiment_info = (
         df_with_row_num
         .filter(pl.col("iteration") == pl.col("doe") - 1)  # Get row at doe position
-        .select(["data_id", "current_y_best"])
-        .rename({"current_y_best": "f_init"})
+        .select(["data_id", "raw_y_best"])
+        .rename({"raw_y_best": "f_init"})
     )
 
     # Join back to get f_init and f_opt for all rows
@@ -306,7 +305,7 @@ def get_opca_loss(experiment_dir) -> pl.DataFrame:
 
     # Calculate normalized gaps
     df_normalized = df_enriched.with_columns([
-        (pl.col("current_y_best") / pl.col("f_init")).alias("normalized_gap")
+        (pl.col("raw_y_best") / pl.col("f_init")).alias("normalized_gap")
     ])
 
     weight_auc = 0.7

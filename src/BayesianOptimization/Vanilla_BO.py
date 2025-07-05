@@ -25,9 +25,9 @@ from botorch.fit import fit_gpytorch_mll
 
 from ioh.iohcpp.problem import RealSingleObjective
 
-from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
-from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
-from Algorithms.utils.vis_utils import OPCABOVisualizer
+from src.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
+from src.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
+from src.utils.vis_utils import OPCABOVisualizer
 
 import warnings
 from botorch.exceptions.warnings import OptimizationWarning, BadInitialCandidatesWarning

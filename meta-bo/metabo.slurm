@@ -5,7 +5,7 @@
 #SBATCH --mail-user=""
 #SBATCH --mail-type=FAIL
 #SBATCH --partition=cpu-short
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --ntasks=1
 #SBATCH --array=0-95
 #SBATCH --constraint=AMD.Zen4
@@ -15,7 +15,7 @@
 conda activate pcabo
 
 algo="opca"
-batch=1
+batch=5
 dims=(10 20 40)
 pids=(15 16 17 18 20 21 22 24)
 iids=({0..3})
@@ -41,7 +41,7 @@ python main.py \
   --dimensions $dim \
   --problems $pid \
   --instances $iid \
-  --experiment_dir "meta-bo" \
+  --experiment_dir "meta-bo-b$batch" \
   --gpr_p <GPRPTEAPOT> \
   --gpr_val_factor <GPRVALTEAPOT> \
   --onorm_factor <ONORMTEAPOT>

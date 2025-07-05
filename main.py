@@ -10,7 +10,7 @@ import argparse
 from time import perf_counter
 import torch
 
-from Algorithms import ExperimentRunner
+from src import ExperimentRunner
 
 
 def parse_arguments():
@@ -24,7 +24,7 @@ def parse_arguments():
         type=str,
         nargs="+",
         default=["vanilla", "pca", "opca"],
-        help="Algorithms to test (default: vanilla pca opca)"
+        help="src to test (default: vanilla pca opca)"
     )
 
     parser.add_argument(
@@ -70,7 +70,8 @@ def parse_arguments():
         "--budget_factor",
         type=int,
         default=15,
-        help="Budget factor for problem evaluations: budget = budget_factor * dim + 50 (default: 15)"
+        help="Budget factor for problem evaluations:"
+             "budget = int((self.budget_factor * dim + 50) * (1 + 0.3 * log(batch_size))) (default: 15)"
     )
 
     parser.add_argument(
@@ -199,7 +200,7 @@ def main():
 
     # Print experiment configuration
     print("\nBayesian Optimization Experiment Configuration:")
-    print(f"  Algorithms: {args.algorithms}")
+    print(f"  src: {args.algorithms}")
     print(f"  Batch sizes: {args.batch}")
     print(f"  Dimensions: {args.dimensions}")
     print(f"  Problems: {args.problems}")

@@ -54,18 +54,18 @@ pip install -r requirements.txt
 
 ```python
 from ioh import get_problem
-from Algorithms import O_PCA_BO
+from src import O_PCA_BO
 
 # Configure O-PCA-BO with optimized hyperparameters
 optimizer = O_PCA_BO(
     budget=200,
-    n_DoE=40,                   # 4d initial points
-    q=1,                        # Candidates per iteration in reduced space
-    ortho_samples=5,            # Orthogonal samples per candidate
-    var_threshold=0.95,         # PCA variance threshold
-    gpr_p=0.589,               # Fraction of points for GP training
-    gpr_val_factor=0.101,      # Value vs distance ranking weight
-    onorm_factor=3.027,        # Orthogonal sampling intensity
+    n_DoE=40,  # 4d initial points
+    q=1,  # Candidates per iteration in reduced space
+    ortho_samples=5,  # Orthogonal samples per candidate
+    var_threshold=0.95,  # PCA variance threshold
+    gpr_p=0.589,  # Fraction of points for GP training
+    gpr_val_factor=0.101,  # Value vs distance ranking weight
+    onorm_factor=3.027,  # Orthogonal sampling intensity
     acquisition_function="expected_improvement"
 )
 

@@ -30,11 +30,11 @@ from botorch.optim.initializers import sample_q_batches_from_polytope
 
 from ioh.iohcpp.problem import RealSingleObjective
 
-from Algorithms.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
-from Algorithms.utils.taylor import estimate_f00_variance
-from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
-from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
-from Algorithms.utils.vis_utils import OPCABOVisualizer
+from src.utils.tqdm_write_stream import redirect_stdout_to_tqdm, restore_stdout
+from src.utils.taylor import estimate_f00_variance
+from src.BayesianOptimization.AbstractBayesianOptimizer import AbstractBayesianOptimizer
+from src.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
+from src.utils.vis_utils import OPCABOVisualizer
 
 import warnings
 from botorch.exceptions.warnings import NumericsWarning, OptimizationWarning, BadInitialCandidatesWarning

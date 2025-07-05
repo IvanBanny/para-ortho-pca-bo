@@ -11,7 +11,7 @@ from botorch.utils.transforms import normalize, unnormalize
 from botorch.utils.sampling import draw_sobol_samples
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from Algorithms import get_opca_loss
+from src import get_opca_loss
 
 
 class BayesianOptimizer:
@@ -127,7 +127,8 @@ class BayesianOptimizer:
         })
 
         print("Next candidates to evaluate:")
-        print(candidates_df)
+        with pl.Config(tbl_rows=300, tbl_cols=20):
+            print(candidates_df)
 
         # Save to file for external use
         candidates_df.write_csv("next_candidates.csv")
@@ -167,7 +168,7 @@ class BayesianOptimizer:
 
         # Generate next candidates using BO
         print("Generating next candidates using Bayesian Optimization...")
-        candidates = self.get_next_candidates(X, y, n_candidates=5)
+        candidates = self.get_next_candidates(X, y, n_candidates=min(100 - len(y), 5))
         self.save_candidates(candidates)
 
 

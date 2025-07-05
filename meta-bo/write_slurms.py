@@ -25,7 +25,7 @@ for i, row in df.iterrows():
     script = script.replace("<ONORMTEAPOT>", str(row["onorm_factor"]))
 
     # Save to file
-    filename = f'cands/cand{i}.slurm'
+    filename = f"cands/cand{i}.slurm"
     with open(filename, 'w') as f:
         f.write(script)
 
