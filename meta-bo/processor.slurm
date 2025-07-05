@@ -29,7 +29,7 @@ if [ ${#exp_job_ids[@]} -e 0 ]; then
 fi
 
 job_id_list=$(IFS=:; echo "${exp_job_ids[*]}")
-echo "All experiment jobs sent. IDs: $job_id_list"
+echo "All experiment jobs sent: $job_id_list"
 
 # Restart loop (generator)
 gen_job_id=$(sbatch --parsable --dependency=afterok:$job_id_list generator.slurm)

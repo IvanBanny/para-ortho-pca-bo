@@ -35,13 +35,13 @@ iid=${iids[$iid_idx]}
 echo "Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Using algo=$algo batch=$batch dim=$dim pid=$pid iid=$iid"
 
-python main.py \
+python ../main.py \
   --algorithms $algo \
   --batch $batch \
   --dimensions $dim \
   --problems $pid \
   --instances $iid \
-  --experiment_dir "meta-bo-b$batch" \
+  --experiment_dir "meta-bo" \
   --gpr_p <GPRPTEAPOT> \
   --gpr_val_factor <GPRVALTEAPOT> \
   --onorm_factor <ONORMTEAPOT>
