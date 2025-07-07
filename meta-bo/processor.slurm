@@ -23,7 +23,7 @@ for slurm_file in ./cands/*.slurm; do
 done
 
 # Exit if no jobs sent
-if [ ${#exp_job_ids[@]} -e 0 ]; then
+if [ ${#exp_job_ids[@]} -eq 0 ]; then
     echo "No experiment jobs to send. Stopping loop."
     exit 1
 fi
