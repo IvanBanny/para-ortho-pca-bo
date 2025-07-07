@@ -84,8 +84,8 @@ def parse_arguments():
     parser.add_argument(
         "--experiment_dir",
         type=str,
-        default="experiment",
-        help="Directory to store experiment results (default: experiment)"
+        default="data",
+        help="Directory to store experiment results (default: data)"
     )
 
     parser.add_argument(
@@ -200,7 +200,7 @@ def main():
 
     # Print experiment configuration
     print("\nBayesian Optimization Experiment Configuration:")
-    print(f"  src: {args.algorithms}")
+    print(f"  algorithms: {args.algorithms}")
     print(f"  Batch sizes: {args.batch}")
     print(f"  Dimensions: {args.dimensions}")
     print(f"  Problems: {args.problems}")

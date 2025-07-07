@@ -64,7 +64,7 @@ class ExperimentRunner:
         cont_acqf: bool = True,
         p_factor: float = 1e-2,
         root_dir: str = os.getcwd(),
-        experiment_name: str = "experiment",
+        experiment_name: str = "data",
         torch_config: Optional[Dict[str, Any]] = None,
         verbose: bool = False
     ):

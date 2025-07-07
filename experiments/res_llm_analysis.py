@@ -258,7 +258,7 @@ class ExperimentAnalyzer:
 def main():
     """Example usage of the ExperimentAnalyzer."""
     # Example configuration - adjust paths and parameters as needed
-    experiment_dir = "./experiment"
+    experiment_dir = "./data"
 
     analyzer = ExperimentAnalyzer(
         experiment_dir=experiment_dir,

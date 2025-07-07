@@ -19,8 +19,8 @@ def parse_arguments():
     parser.add_argument(
         "--experiment_dir",
         type=str,
-        default="experiment",
-        help="Directory containing experiment data (default: experiment)"
+        default="data",
+        help="Directory containing experiment data (default: data)"
     )
 
     parser.add_argument(

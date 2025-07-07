@@ -129,6 +129,9 @@ class ExperimentVisualizer:
         fig_size = (fig_size_margin[0] + fig_size_cell[0] * row_len,
                     fig_size_margin[1] + fig_size_cell[1] * col_len)
 
+        if not os.path.exists("visualizations"):
+            os.makedirs("visualizations")
+
         # Create individual plots for different batch sizes
         for batch_size in batch_sizes:
             fig = plt.figure(figsize=fig_size, dpi=self.dpi)
@@ -325,6 +328,9 @@ class ExperimentVisualizer:
 
         fig_size = (fig_size_margin[0] + fig_size_cell[0] * len(dimensions),
                     fig_size_margin[1] + fig_size_cell[1])
+
+        if not os.path.exists("visualizations"):
+            os.makedirs("visualizations")
 
         # Create individual plots for different batch sizes
         for batch_size in batch_sizes:
