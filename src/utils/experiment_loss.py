@@ -280,7 +280,7 @@ def get_opca_loss(experiment_dir) -> pl.DataFrame:
             'loss': []
         })
 
-    cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best', 'raw_y_best']
+    cols = ['data_id', 'gpr_p', 'gpr_val_factor', 'onorm_factor', 'doe', 'raw_y_best']
 
     df = pl.concat([manager.select(dimensions=[d]).load(False, True)
                    .select(cols).drop_nulls() for d in manager.overview["dimension"].unique().to_list()])

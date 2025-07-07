@@ -17,7 +17,7 @@ from joblib import Parallel, delayed
 
 from ioh import get_problem
 from ioh.iohcpp.logger import Analyzer
-from ioh.iohcpp.logger.property import RAWYBEST, CURRENTY, CURRENTBESTY
+from ioh.iohcpp.logger.property import RAWYBEST
 from ioh.iohcpp.logger.trigger import ALWAYS
 
 # Import BO algorithms
@@ -120,7 +120,7 @@ class ExperimentRunner:
 
         # Additional logger properties
         self.triggers = [ALWAYS]  # Log on every problem evaluation
-        self.logger_properties = [RAWYBEST, CURRENTY, CURRENTBESTY]
+        self.logger_properties = [RAWYBEST]
 
         if self.instances is None:
             if self.num_runs is None:

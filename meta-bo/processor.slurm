@@ -6,7 +6,7 @@
 #SBATCH --mail-type=FAIL
 #SBATCH --partition=cpu-short
 #SBATCH --time=00:20:00
-#SBATCH --mem=1G
+#SBATCH --mem=100M
 
 conda activate pcabo
 
