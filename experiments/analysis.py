@@ -6,7 +6,7 @@ Performs Wilcoxon rank-sum tests comparing algorithms.
 
 import os
 import argparse
-from src.Experiment.ExperimentAnalyzer import ExperimentAnalyzer
+from src import ExperimentAnalyzer
 
 
 def parse_arguments():
