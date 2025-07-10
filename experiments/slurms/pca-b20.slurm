@@ -41,6 +41,6 @@ python ../main.py \
   --dimensions $dim \
   --problems $pid \
   --instances $iid \
-  --gpr_p 0.42 \
+  --gpr_p 0.471504 \
   --gpr_val_factor 0.0 \
-  --onorm_factor 5.812329
+  --onorm_factor 7.803236

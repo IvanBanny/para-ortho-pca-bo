@@ -15,7 +15,7 @@
 conda activate pcabo
 
 algo="opca"
-batch=15
+batch=42
 dims=(10 20 40)
 pids=({15..24})
 iids=({0..29})
@@ -41,6 +41,6 @@ python ../main.py \
   --dimensions $dim \
   --problems $pid \
   --instances $iid \
-  --gpr_p 0.42 \
-  --gpr_val_factor 0.0 \
-  --onorm_factor 5.812329
+  --gpr_p 0.740087 \
+  --gpr_val_factor 0.070968 \
+  --onorm_factor 7.55555

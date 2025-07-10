@@ -34,8 +34,8 @@ def parse_arguments():
         "--batch",
         type=int,
         nargs="+",
-        default=[1, 5, 10, 15, 20],
-        help="Batch sizes to test (default: 1 5)"
+        default=[1, 5, 10, 20, 42],
+        help="Batch sizes to test (default: 1 5 10 20 42)"
     )
 
     return parser.parse_args()
