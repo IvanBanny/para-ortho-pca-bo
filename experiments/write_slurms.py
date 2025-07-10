@@ -9,6 +9,10 @@ import argparse
 OPCABO_DEFAULT_CONFIG = {"gpr_p": 0.42, "gpr_val_factor": 0.0, "onorm_factor": 5.812329}
 OPCABO_BATCH_CONFIG = {
     1: {"gpr_p": 0.42, "gpr_val_factor": 0.0, "onorm_factor": 5.812329},
+    5: {"gpr_p": 0.520197, "gpr_val_factor": 0.027186, "onorm_factor": 7.952228},
+    10: {"gpr_p": 0.456144, "gpr_val_factor": 0.0, "onorm_factor": 6.875751},
+    20: {"gpr_p": 0.471504, "gpr_val_factor": 0.0, "onorm_factor": 7.803236},
+    42: {"gpr_p": 0.740087, "gpr_val_factor": 0.070968, "onorm_factor": 7.55555},
 }
 
 
