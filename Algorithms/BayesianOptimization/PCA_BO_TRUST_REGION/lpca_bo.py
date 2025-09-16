@@ -20,7 +20,10 @@ from numpy.linalg import norm
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO, MyPCA, DOE
 
 
+
 class CleanLPCABO(CleanPCABO):
+    GPR_CONSIDER_ALL_POINTS = True
+    USE_EXTRA_DOE = True
 
     # INITIALIZE TRUST REGION
     def initialize_restart(self):
@@ -97,24 +100,31 @@ class CleanLPCABO(CleanPCABO):
             maximization=self.maximization
         )
 
-    # def create_gpr_model(self, points_z, z_bounds):
-    #     in_tr = self.filter_points()
-    #     points_z_tr = points_z[in_tr]
-    #     fX_tr = self.fX[in_tr]
-    #     model = SingleTaskGP(
-    #         torch.from_numpy(points_z_tr),
-    #         torch.from_numpy(fX_tr.reshape((-1, 1))),
-    #         covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
-    #         outcome_transform=Standardize(m=1),
-    #         input_transform=Normalize(
-    #             d=points_z_tr.shape[-1],
-    #             bounds=torch.from_numpy(z_bounds)
-    #         ),
-    #     )
-    #
-    #     mll = ExactMarginalLogLikelihood(model.likelihood, model)
-    #     fit_gpytorch_mll(mll)
-    #     return model
+    def create_gpr_model(self, points_z, z_bounds):
+        if self.GPR_CONSIDER_ALL_POINTS:
+            gpr_points_z = points_z
+            gpr_points_fX = self.fX
+        else:
+            in_tr = self.filter_points()
+            points_z_tr = points_z[in_tr]
+            fX_tr = self.fX[in_tr]
+            gpr_points_z = points_z_tr
+            gpr_points_fX = fX_tr
+
+        model = SingleTaskGP(
+            torch.from_numpy(gpr_points_z),
+            torch.from_numpy(gpr_points_fX.reshape((-1, 1))),
+            covar_module=MaternKernel(2.5),  # Use the Matern 5/2 Kernel
+            outcome_transform=Standardize(m=1),
+            input_transform=Normalize(
+                d=gpr_points_z.shape[-1],
+                bounds=torch.from_numpy(z_bounds)
+            ),
+        )
+
+        mll = ExactMarginalLogLikelihood(model.likelihood, model)
+        fit_gpytorch_mll(mll)
+        return model
 
     # CALCULATE TRUST REGION BOUNDS
     def return_tr_bounds(self):
@@ -165,7 +175,7 @@ class CleanLPCABO(CleanPCABO):
             self.failcount = 0
             tr_length_changed = True
 
-        if tr_length_changed:
+        if self.USE_EXTRA_DOE and tr_length_changed:
             doe = DOE(self.d)
             [
                 self.eval_at(point, check_tr_bounds=False)

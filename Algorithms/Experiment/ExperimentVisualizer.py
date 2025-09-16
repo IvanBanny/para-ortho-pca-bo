@@ -16,6 +16,16 @@ from matplotlib.patches import Rectangle
 
 import Algorithms.utils.iohreader as iohreader
 
+label_name_mapping = {
+    "clean-lpca": "LPCA-BO",
+    "clean-pca": "PCA-BO",
+    "my-vanilla": "Vanilla BO",
+    "clean-lpca I1": "LPCA-BO I1",
+    "clean-lpca I8": "LPCA-BO I8",
+    "turbo1": "Turbo 1",
+    "turbom": "TurboM"
+}
+
 
 class ExperimentVisualizer:
     """Class to visualize and analyze experimental results from Bayesian Optimization algorithms."""
@@ -67,7 +77,7 @@ class ExperimentVisualizer:
         """Create all plots for the experiment data."""
         self.load_data()
         self.plot_convergence()
-        self.plot_times()
+        #self.plot_times()
         self.data = None
 
     def load_data(self):
@@ -82,7 +92,7 @@ class ExperimentVisualizer:
             manager.add_folder(self.experiment_dir)
 
             cols = ['data_id', 'algorithm_name', 'function_id',
-                    'dimension', 'instance', 'time', 'evals', 'best_y',
+                    'dimension', 'instance', 'evals', 'best_y',
                      'evaluations', 'raw_y', 'raw_y_best']
 
             self.data = pl.concat([
@@ -101,6 +111,40 @@ class ExperimentVisualizer:
             if self.cache:
                 print("\nCaching results...\n")
                 self.data.write_parquet(cache_path)
+
+    def _clip_iterations_to_minimum(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Clip all algorithms to the minimum number of iterations across algorithms for each dimension-function combination.
+
+        Args:
+            df: DataFrame containing the experimental data
+
+        Returns:
+            DataFrame with iterations clipped to the minimum across algorithms
+        """
+        # Find minimum max evaluations for each dimension-function-algorithm combination
+        min_evals_per_combo = (
+            df.group_by(["dimension", "function_id", "algorithm_name"])
+            .agg(pl.col("evaluations").max().alias("max_evals"))
+            .group_by(["dimension", "function_id"])
+            .agg(pl.col("max_evals").min().alias("min_max_evals"))
+        )
+
+        # Join back to original data and filter
+        clipped_df = (
+            df.join(
+                min_evals_per_combo,
+                on=["dimension", "function_id"],
+                how="left"
+            )
+            .filter(pl.col("evaluations") <= pl.col("min_max_evals"))
+            .drop("min_max_evals")
+        )
+
+        print("Clipping iterations to minimum across algorithms:")
+        for row in min_evals_per_combo.sort(["dimension", "function_id"]).iter_rows(named=True):
+            print(f"  Dim {row['dimension']}, F{row['function_id']}: {row['min_max_evals']} evaluations")
+
+        return clipped_df
 
     def plot_convergence(self):
         """Plot convergence graphs per batch sizes, per dimension, per function."""
@@ -161,7 +205,7 @@ class ExperimentVisualizer:
 
         legend_handles = []
         for i, algorithm in enumerate(algorithms):
-            handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=algorithm)
+            handle = plt.Line2D([0], [0], color=self.colors[i], linewidth=2, label=label_name_mapping[algorithm])
             legend_handles.append(handle)
 
         fig.legend(handles=legend_handles, loc="lower center",
@@ -184,6 +228,9 @@ class ExperimentVisualizer:
             (pl.col("dimension") == dimension) &
             (pl.col("function_id") == function)
         )
+
+        # Clip iterations to minimum across algorithms for this dimension-function combination
+        df = self._clip_iterations_to_minimum(df)
 
         stats_df = (
             df
@@ -220,7 +267,7 @@ class ExperimentVisualizer:
             lower = [y_val - m for y_val, m in zip(y, margin)]
             upper = [y_val + m for y_val, m in zip(y, margin)]
 
-            ax.plot(x, y, c=self.colors[i], label=algorithm, linewidth=0.5)
+            ax.plot(x, y, c=self.colors[i], label=label_name_mapping[algorithm], linewidth=0.5)
             ax.fill_between(x, lower, upper, color=self.colors[i], alpha=0.2)
 
         ax.set_yscale("log")
@@ -312,7 +359,7 @@ class ExperimentVisualizer:
                     fig_size_margin[1] + fig_size_cell[1])
 
         fig = plt.figure(figsize=fig_size, dpi=self.dpi)
-        fig.subplots_adjust(left=0.04, right=0.97, top=0.97, bottom=0.12)
+        fig.subplots_adjust(left=0.08, right=0.97, top=0.97, bottom=0.12)
 
         # Create a grid of subplots for different dimensions
         dims_gs = gridspec.GridSpec(1, len(dimensions), wspace=0.05)
@@ -344,7 +391,7 @@ class ExperimentVisualizer:
                     edgecolor="black",
                     linewidth=0.8,
                     alpha=0.5,
-                    label=algorithm
+                    label=label_name_mapping[algorithm]
                 )
                 legend_handles.append(handle)
 
@@ -389,7 +436,7 @@ class ExperimentVisualizer:
             .filter((pl.col("dimension") == dimension))
         )
 
-        algorithms = self.algorithms or df["algorithm_name"].unique()
+        algorithms = self.algorithms or self.data["algorithm_name"].unique().sort().to_list()
         functions = self.functions or df["function_id"].unique()
 
         # Single group_by operation instead of nested filtering
@@ -471,7 +518,10 @@ class ExperimentVisualizer:
 
         ax.yaxis.set_major_formatter(FuncFormatter(integer_or_scientific_formatter))
         ax.yaxis.set_minor_formatter(FuncFormatter(lambda x, pos: ''))
-        ax.tick_params(axis="both", labelsize=9, length=2, width=0.5)
+        # Decreased x-axis label size from 9 to 7
+        ax.tick_params(axis="both", labelsize=9)
+        ax.tick_params(axis="x", labelsize=7)  # Smaller x-axis labels
+        ax.tick_params(length=2, width=0.5)
 
         ax.set_facecolor("#f8f8f8")
         ax.grid(True, color="white", linewidth=1)

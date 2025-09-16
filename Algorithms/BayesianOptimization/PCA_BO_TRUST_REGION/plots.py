@@ -117,8 +117,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
                 points_y = iteration_data.points_x[:, 1]
 
                 # Highlight the global optimum
-                ax.scatter(pcabo.global_optimum_x[0], pcabo.global_optimum_x[1], color='gray', marker='*', s=400,
-                           label='Global Optimum')
+                ax.scatter(pcabo.global_optimum_x[0], pcabo.global_optimum_x[1], color='white', marker='*', s=400,
+                           edgecolors='black', linewidth=1, label='Global Optimum')
 
                 # Plot all points in black first
                 ax.scatter(points_x, points_y, color='black', marker='o', s=50, alpha=0.5, label='Search points')
@@ -306,8 +306,8 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
                            label='Observed points')
 
                 # Highlight the most recent point
-                ax.scatter(points_z_1d[-1], iteration_data.points_y[-1], color='red',
-                           marker='*', s=200, label='Latest point')
+                #ax.scatter(points_z_1d[-1], iteration_data.points_y[-1], color='red',
+                           #marker='*', s=200, label='Latest point')
 
                 # Add best point found so far
                 best_idx = np.argmin(iteration_data.points_y) if not pcabo.maximization else np.argmax(
@@ -334,6 +334,7 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
         ax.set_xlabel("Reduced Dimension (PC1)", fontsize=12)
         ax.set_ylabel("Acquisition Value", fontsize=12)
 
+
         i1, i2 = calculate_pc1_bounds_intersection(iteration_data.bounds, iteration_data.pca)
         ax.vlines([i1, i2], 0, 1, transform=ax.get_xaxis_transform(), label="Intersection PC1 and Bounds")
 
@@ -343,6 +344,12 @@ def plot2d(pcabo: CleanPCABOWithLogging | CleanLPCABOWithLogging, output_folder:
             ax.plot(acqf_x_flat, iteration_data.pacqf_y, 'r-', linewidth=2, label='Penalized Acquisition function')
 
             ax.plot(acqf_x_flat, iteration_data.acqf_y, 'g-', linewidth=2, label='Acquisition function')
+
+            y_range = iteration_data.acqf_y.max() - iteration_data.acqf_y.min()
+
+            ax.set_ylim(iteration_data.acqf_y.min() - y_range * 0.2, iteration_data.acqf_y.max())
+
+            ax.set_yscale('symlog')
 
             latest_point_x = iteration_data.points_x[-1:]
             latest_point_z = iteration_data.pca.transform_to_reduced(latest_point_x)

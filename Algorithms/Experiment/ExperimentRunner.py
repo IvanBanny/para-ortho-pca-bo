@@ -18,8 +18,12 @@ from ioh.iohcpp.logger.trigger import ALWAYS
 # Import BO algorithms
 from Algorithms import Vanilla_BO
 from Algorithms import PCA_BO
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo import CleanLPCABO
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.lpca_bo_interface_class import CleanLPCABOInterface
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo import CleanPCABO
 from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.pca_bo_interface_class import CleanPCABOInterface
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.vanilla_bo import CleanVanillaBO
+from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.vanilla_bo_interface_class import CleanVanillaBOInterface
 
 
 class ExperimentRunner:
@@ -89,13 +93,20 @@ class ExperimentRunner:
         print(f"\nRunning {total_runs} experiments ({len(self.algorithms)} algorithms × "
               f"{len(self.dimensions)} dimensions × {len(self.problem_ids)} problems × {self.num_runs} runs)\n")
 
+        self.instances = list(self.instances)
+        self.instances[0] += 8
+
+        print(self.instances)
+
+        # self.instances = [8] * len(self.instances)
+
         suite = BBOB(problem_ids=self.problem_ids, dimensions=self.dimensions, instances=self.instances)
 
         with tqdm(total=total_runs, position=0, desc="Total Progress") as ebar:
             for algorithm in self.algorithms:
                 logger = Analyzer(
                     triggers=self.triggers,
-                    root=self.root_dir,
+                    root=self.root_dir + "/experiments",
                     folder_name=f"{algorithm}-{self.experiment_name}",
                     algorithm_name=algorithm,
                     algorithm_info=f"A {algorithm}-BO Implementation.",
@@ -113,6 +124,8 @@ class ExperimentRunner:
                 match algorithm:
                     case "vanilla":
                         optimizer_class = Vanilla_BO
+                    case "my-vanilla":
+                        optimizer_class = CleanVanillaBOInterface
                     case "pca":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",
@@ -123,21 +136,19 @@ class ExperimentRunner:
                     case "clean-pca":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",
-                            "var_threshold": f"{self.var_threshold}"
+                            "var_threshold": f"{self.var_threshold}",
+                            "use_constraints": f"{CleanPCABO.USE_CONSTRAINTS}"
                         })
                         optimizer_class = CleanPCABOInterface
                     case "clean-lpca":
                         logger.set_experiment_attributes({
                             "pca_components": f"{self.pca_components}",
-                            "var_threshold": f"{self.var_threshold}"
+                            "var_threshold": f"{self.var_threshold}",
+                            "use_constraints": f"{CleanLPCABO.USE_CONSTRAINTS}",
+                            "use_extra_doe": f"{CleanLPCABO.USE_EXTRA_DOE}",
+                            "gpr_consider_all_points": f"{CleanLPCABO.GPR_CONSIDER_ALL_POINTS}"
                         })
                         optimizer_class = CleanLPCABOInterface
-                    case "LPCA_BO":
-                        logger.set_experiment_attributes({
-                            "pca_components": f"{self.pca_components}",
-                            "var_threshold": f"{self.var_threshold}",
-                        })
-                        optimizer_class = LPCA_BO  # <-- The PCA-TuRBO class
                     case _:
                         raise ValueError(f"Invalid algorithm name: '{algorithm}'")
 
@@ -163,7 +174,7 @@ class ExperimentRunner:
 
                     budget = self.budget_factor * dim + 50
                     n_doe = int(self.doe_factor * dim)
-                    random_seed = 1000 * problem_id + 10 * dim + instance
+                    random_seed = 1000 * problem_id + 10 * dim + instance + i    # CHANGE SEED HERE
 
                     with tqdm(total=budget, position=1, desc="", leave=False) as pbar:
                         pbar.set_description(f"{algorithm} | {dim}-dim | F-{problem_id} | run-{run_num + 1}")
@@ -174,6 +185,17 @@ class ExperimentRunner:
                         match algorithm:
                             case "vanilla":
                                 optimizer = Vanilla_BO(
+                                    budget=budget,
+                                    n_DoE=n_doe,
+                                    acquisition_function=self.acquisition_function,
+                                    random_seed=random_seed,
+                                    maximization=maximization,
+                                    verbose=self.verbose,
+                                    DoE_parameters=self.doe_params,
+                                    pbar=pbar
+                                )
+                            case "my-vanilla":
+                                optimizer = CleanVanillaBOInterface(
                                     budget=budget,
                                     n_DoE=n_doe,
                                     acquisition_function=self.acquisition_function,
@@ -222,18 +244,6 @@ class ExperimentRunner:
                                     pbar=pbar
                                 )
 
-                            case "lpca_bo":
-                                optimizer = LPCA_BO(
-                                    budget=budget,
-                                    n_DoE=n_doe,
-                                    var_threshold=self.var_threshold,
-                                    acquisition_function=self.acquisition_function,  # e.g. "pei"
-                                    random_seed=random_seed,
-                                    maximization=maximization,
-                                    verbose=self.verbose,
-                                    DoE_parameters=self.doe_params,
-                                    pbar=pbar,
-                                )
                             case _:
                                 raise ValueError(f"Invalid algorithm name: '{algorithm}'")
 

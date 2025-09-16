@@ -19,7 +19,8 @@ def parse_arguments():
     parser.add_argument(
         "--experiment_dir",
         type=str,
-        default=r"C:\Users\Adela\PycharmProjects\para-ortho-pca-bo\Adela_visualizations\gubic",
+        default=#r"C:\Users\Adela\PycharmProjects\para-ortho-pca-bo\experiments_20250708_194219\experiments", # C:\Users\Adela\PycharmProjects\para-ortho-pca-bo\experiments_20250610_113450", #  r"C:\Users\Adela\PycharmProjects\para-ortho-pca-bo\Adela_visualizations\gubic",
+            r"C:\Users\Adela\PycharmProjects\para-ortho-pca-bo\experiments_20250803_162142",
         help="Directory containing experiment data (default: experiment)"
     )
 

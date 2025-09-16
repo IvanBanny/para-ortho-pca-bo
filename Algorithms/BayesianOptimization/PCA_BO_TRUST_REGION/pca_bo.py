@@ -21,8 +21,6 @@ from sklearn.decomposition import PCA
 from Algorithms.BayesianOptimization.AbstractBayesianOptimizer import LHS_sampler
 from Algorithms.BayesianOptimization.PenalizedAcqf import PenalizedAcqf
 
-USE_CONSTRAINTS = False
-
 
 class DOE:
     def __init__(
@@ -122,6 +120,8 @@ class MyPCA:
 
 
 class CleanPCABO:
+    USE_CONSTRAINTS = False
+
     function_evaluation_count = 0
 
     def __init__(
@@ -215,7 +215,7 @@ class CleanPCABO:
         return self.bounds
 
     def create_penalized_acquisition(self, acquisition_function, gpr_model, pca):
-        if USE_CONSTRAINTS:
+        if self.USE_CONSTRAINTS:
             return acquisition_function
         return PenalizedAcqf(
             acquisition_function=acquisition_function,
@@ -231,7 +231,7 @@ class CleanPCABO:
 
     def optimize_acquisition(self, pca: MyPCA, penalized_acquisition_function, z_bounds):
         inequality_constraints = None
-        if USE_CONSTRAINTS:
+        if self.USE_CONSTRAINTS:
             # Get PCA components and means for transformation
             # components = torch.from_numpy(pca.pca.components_)  # shape: [n_components, n_features]
             # data_mean = torch.from_numpy(pca.data_mean)  # shape: [n_features]

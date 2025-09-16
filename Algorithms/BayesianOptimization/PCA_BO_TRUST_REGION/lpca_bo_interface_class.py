@@ -1,3 +1,4 @@
+import datetime
 import pickle
 from typing import Union, Callable, Optional, Dict, Any, List
 
@@ -102,8 +103,8 @@ class CleanLPCABOWithLogging(CleanLPCABO):
             padding_x = 0.1 * (x_max - x_min)
             padding_y = 0.1 * (y_max - y_min)
 
-            x = np.linspace(x_min - padding_x, x_max + padding_x, 100)
-            y = np.linspace(y_min - padding_y, y_max + padding_y, 100)
+            x = np.linspace(x_min - padding_x, x_max + padding_x, 200)
+            y = np.linspace(y_min - padding_y, y_max + padding_y, 200)
             X_grid, Y_grid = np.meshgrid(x, y)
             XY = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
             Z = np.array([self.problem(point) for point in XY])
@@ -124,7 +125,7 @@ class CleanLPCABOWithLogging(CleanLPCABO):
         plot_z_ub = z_bounds[1, :]
 
         iteration = self.iterations[-1]
-        iteration.gpr_x = np.linspace(plot_z_lb, plot_z_ub, 100).reshape(-1, 1)  # 100 evenly spaced points in the 1 dimensional reduced space
+        iteration.gpr_x = np.linspace(plot_z_lb, plot_z_ub, 400).reshape(-1, 1)  # 100 evenly spaced points in the 1 dimensional reduced space
 
         # Predict the mean and variance of the gpr model at the 100 evenly spaced points
         with torch.no_grad():
@@ -201,4 +202,4 @@ if __name__ == "__main__":
         print(len(loaded_data.iterations))
         print(loaded_data.X)
         from Algorithms.BayesianOptimization.PCA_BO_TRUST_REGION.plots import plot2d
-        plot2d(loaded_data, "visualization_output_lpca")
+        plot2d(loaded_data, "visualizations/visualization_output_lpca_" + datetime.datetime.now().strftime("%d-%m_%H-%M"))

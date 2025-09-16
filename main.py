@@ -96,17 +96,22 @@ def main():
     """Configure and run the experiment based on command line arguments."""
     args = parse_arguments()
 
-    algorithms = ["clean-lpca"]
+    algorithms = ["clean-pca"]
 
     # For quick testing, override with minimal settings if --quick flag is used
     if args.quick:
-        args.dimensions = [40]  # Use only 2D
-        args.problems = [23]  # Use only problems 15 and 20
-        args.runs = 30  # Just 30 runs
+        args.dimensions = [2]  # Use only 2D
+        args.problems = [8]  # Use only problems 15 and 20 + 9 unimodal
+        args.runs = 1  # Just 30 runs
         args.budget_factor = 5  # Small budget
-        # args.var_threshold = 0.001
-        algorithms = ["clean-lpca"]
+        args.var_threshold = 0.001
+        algorithms = ["clean-pca"]
         print("\nRunning in quick test mode with minimal settings")
+
+        # args.dimensions = [10, 20, 40]
+        # args.problems = [8]
+        # args.runs = 15
+
 
     # Initialize experiment runner
     experiment = ExperimentRunner(
